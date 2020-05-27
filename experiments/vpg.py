@@ -80,7 +80,7 @@ class Critic(nn.Module):
 
 class Memory():
 
-    def __init__(self, observation_space: gym.spaces.Box, action_space: gym.spaces.Box, maxSize=1000):
+    def __init__(self, observation_space: gym.spaces.Box, action_space: gym.spaces.Box, maxSize=10000):
         self.maxSize = maxSize
         self.state = np.zeros((maxSize, observation_space.shape[0]))
         self.action = np.zeros((maxSize, action_space.shape[0]))
@@ -123,11 +123,11 @@ class Memory():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("env", type=str, default="MountainCarContinuous-v0")
-    parser.add_argument("--a_lr", type=float, default=0.0001)
-    parser.add_argument("--c_lr", type=float, default=0.0001)
+    parser.add_argument("--a_lr", type=float, default=0.001)
+    parser.add_argument("--c_lr", type=float, default=0.001)
     parser.add_argument("--gamma", type=float, default=0.9)
-    parser.add_argument("--episodes", type=int, default=50)
-    parser.add_argument("--max_episode_len", type=int, default=1000)
+    parser.add_argument("--episodes", type=int, default=500)
+    parser.add_argument("--max_episode_len", type=int, default=500)
 
     args = parser.parse_args()
     
@@ -149,26 +149,31 @@ if __name__ == '__main__':
 
     memory = Memory(env.observation_space, env.action_space)
 
-    def update():
+    def update(updates: int = 50):
 
         states, actions, rewards, next_states, _ = tuple(map(lambda x: torch.as_tensor(x, dtype=torch.float32), memory.get()))
         
         actorOptim.zero_grad()
-        predicted_value = critic(states)
+        with torch.no_grad():
+            predicted_value = critic(states)
         expected_value = rewards + gamma * critic(next_states)
         tempDiff: torch.Tensor = expected_value - predicted_value
         log_probs = actor.log_probs(states, actions)
-        actor_loss = -(log_probs * tempDiff).mean()
+        actor_loss = -(log_probs * tempDiff.abs()).mean()
         actor_loss.backward()
         actorOptim.step()
 
-        criticOptim.zero_grad()
-        predicted_value = critic(states)
-        expected_value = rewards + gamma * critic(next_states)
-        tempDiff: torch.Tensor = expected_value - predicted_value
-        critic_loss = (tempDiff**2).mean()
-        critic_loss.backward()
-        criticOptim.step()
+        for i in range(updates):
+            states, actions, rewards, next_states, _ = tuple(map(lambda x: torch.as_tensor(x, dtype=torch.float32), memory.get(batchSize=128)))
+
+            criticOptim.zero_grad()
+            predicted_value = critic(states)
+            with torch.no_grad():
+                expected_value = rewards + gamma * critic(next_states)
+            tempDiff: torch.Tensor = expected_value - predicted_value
+            critic_loss = (tempDiff**2).mean()
+            critic_loss.backward()
+            criticOptim.step()
 
 
     episodeRewards = []
@@ -176,7 +181,7 @@ if __name__ == '__main__':
     for episode in range(episodes):
         state = env.reset()
         total_reward = 0
-        env.render()
+        # env.render()
         for step in range(max_episode_len):
             action, _ = actor.act(torch.as_tensor(state, dtype=torch.float32))
             next_state, reward, done, _ = env.step(action)
@@ -184,7 +189,7 @@ if __name__ == '__main__':
 
             memory.add(state, action, reward, next_state, action)
             state = next_state
-            env.render()
+            # env.render()
 
             if done:
                 break
@@ -193,5 +198,3 @@ if __name__ == '__main__':
         print(f"Episode {episode}: # Steps = {step}, Reward = {total_reward}")
         episodeRewards.append(total_reward)
 
-    plt.plot(episodeRewards)
-    plt.show()
