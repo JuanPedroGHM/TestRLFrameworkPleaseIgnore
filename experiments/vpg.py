@@ -8,8 +8,6 @@ import torch
 from torch import nn
 from torch.distributions import Normal
 
-env: gym.Env = gym.make("MountainCarContinuous-v0")
-
 def mlp(layers: List[int], activation: nn.Module= nn.ReLU, dropout=False, batchNorm=False, outputActivation : nn.Module = torch.nn.Identity) -> nn.Module:
 
     model = []
@@ -123,11 +121,11 @@ class Memory():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("env", type=str, default="MountainCarContinuous-v0")
-    parser.add_argument("--a_lr", type=float, default=0.001)
-    parser.add_argument("--c_lr", type=float, default=0.001)
+    parser.add_argument("--a_lr", type=float, default=0.0001)
+    parser.add_argument("--c_lr", type=float, default=0.0001)
     parser.add_argument("--gamma", type=float, default=0.9)
     parser.add_argument("--episodes", type=int, default=500)
-    parser.add_argument("--max_episode_len", type=int, default=500)
+    parser.add_argument("--max_episode_len", type=int, default=200)
 
     args = parser.parse_args()
     
@@ -145,7 +143,7 @@ if __name__ == '__main__':
     critic = Critic(env.observation_space, [256, 64])
 
     actorOptim = torch.optim.Adam(actor.parameters(), lr=a_lr)
-    criticOptim = torch.optim.Adam(actor.parameters(), lr=c_lr)
+    criticOptim = torch.optim.Adam(critic.parameters(), lr=c_lr)
 
     memory = Memory(env.observation_space, env.action_space)
 
@@ -156,14 +154,14 @@ if __name__ == '__main__':
         actorOptim.zero_grad()
         with torch.no_grad():
             predicted_value = critic(states)
-        expected_value = rewards + gamma * critic(next_states)
+            expected_value = rewards + gamma * critic(next_states)
         tempDiff: torch.Tensor = expected_value - predicted_value
         log_probs = actor.log_probs(states, actions)
         actor_loss = -(log_probs * tempDiff.abs()).mean()
         actor_loss.backward()
         actorOptim.step()
 
-        for i in range(updates):
+        for _ in range(updates):
             states, actions, rewards, next_states, _ = tuple(map(lambda x: torch.as_tensor(x, dtype=torch.float32), memory.get(batchSize=128)))
 
             criticOptim.zero_grad()
