@@ -16,7 +16,7 @@ def mlp(layers: List[int], activation: nn.Module= nn.ReLU, dropout=False, batchN
         model.append(nn.Linear(lastOutputSize, layerSize))
         if index < len(layers) - 1:
             if batchNorm:
-                model.append(nn.BatchNorm1d(layerSize))
+                model.append(nn.LayerNorm(layerSize))
             model.append(activation())
             if dropout:
                 model.append(nn.Dropout())
@@ -36,7 +36,7 @@ class Actor(nn.Module):
 
         layers = [observation_space.shape[0]] + hidden + [action_space.shape[0]]
 
-        self.mu = mlp(layers, activation=nn.ReLU)
+        self.mu = mlp(layers, activation=nn.ReLU, outputActivation=nn.Tanh)
         std = -0.5 * np.ones(action_space.shape[0])
         self.sigma = nn.Parameter(torch.as_tensor(std, dtype=torch.float32))
 
@@ -44,21 +44,16 @@ class Actor(nn.Module):
         mu = self.mu(obs)
         std = torch.exp(self.sigma)
 
+        return mu, std
+
+    def act(self, obs, sample:bool=False):
+        mu, std = self.forward(obs)
         dist = Normal(mu, std)
-        return dist
-
-    def log_probs(self, states, actions):
-        dist = self.forward(states)
-        return dist.log_prob(actions)
-
-
-
-    def act(self, obs):
-        with torch.no_grad():
-            dist = self.forward(obs)
+        if sample:
             action = dist.sample()
-            log_prob = dist.log_prob(action).sum(axis=-1)
-            return action.numpy(), log_prob.numpy()
+            return action.cpu().data.numpy(), dist.log_prob(action)
+        else:
+            return mu, dist.log_prob(mu)
 
 
 class Critic(nn.Module):
@@ -84,11 +79,14 @@ class Memory():
         self.action = np.zeros((maxSize, action_space.shape[0]))
         self.reward = np.zeros(( maxSize, 1 ))
         self.next_state = np.zeros((maxSize, observation_space.shape[0]))
-        self.next_action = np.zeros((maxSize, observation_space.shape[0]))
+        self.done = np.zeros((maxSize, 1))
         self.ptr = 0
         self.looped = False
 
-    def add(self, state, act, reward, next_state, next_action):
+    def size(self):
+        return self.maxSize if self.looped else self.ptr
+
+    def add(self, state, act, reward, next_state, done):
         if self.ptr >= self.maxSize:
             self.ptr = 0
             self.looped = True
@@ -97,7 +95,7 @@ class Memory():
         self.action[self.ptr,:] = act
         self.reward[self.ptr,:] = reward
         self.next_state[self.ptr,:] = next_state
-        self.next_action[self.ptr,:] = next_action
+        self.done[self.ptr,:] = done
 
         self.ptr += 1
 
@@ -108,24 +106,29 @@ class Memory():
             else:
                 idx = np.random.choice(self.ptr, size=batchSize, replace=False)
 
-            return self.state[idx,:], self.action[idx,:], self.reward[idx,:], self.next_state[idx,:], self.next_action[idx,:]
+            return self.state[idx,:], self.action[idx,:], self.reward[idx,:], self.next_state[idx,:], self.done[idx,:]
         else:
             if self.looped:
-                return self.state, self.action, self.reward, self.next_state, self.next_action
+                return self.state, self.action, self.reward, self.next_state, self.done
 
             else:
-                return self.state[:self.ptr,:], self.action[:self.ptr,:], self.reward[:self.ptr,:], self.next_state[:self.ptr,:], self.next_action[:self.ptr,:]
+                return self.state[:self.ptr,:], self.action[:self.ptr,:], self.reward[:self.ptr,:], self.next_state[:self.ptr,:], self.done[:self.ptr,:]
 
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("env", type=str, default="MountainCarContinuous-v0")
-    parser.add_argument("--a_lr", type=float, default=0.0001)
-    parser.add_argument("--c_lr", type=float, default=0.0001)
-    parser.add_argument("--gamma", type=float, default=0.9)
+    parser.add_argument("--env", type=str, default="MountainCarContinuous-v0")
+    parser.add_argument("--a_lr", type=float, default=1e-2)
+    parser.add_argument("--c_lr", type=float, default=5e-3)
+    parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--episodes", type=int, default=500)
     parser.add_argument("--max_episode_len", type=int, default=200)
+    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--update_freq", type=int, default=50)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(device)
 
     args = parser.parse_args()
     
@@ -134,65 +137,75 @@ if __name__ == '__main__':
     c_lr = args.c_lr
     episodes = args.episodes
     max_episode_len = args.max_episode_len
+    batch_size = args.batch_size
+    update_freq = args.update_freq
 
     # Setup
 
     env = gym.make(args.env)
 
-    actor = Actor(env.observation_space, env.action_space, [256, 64])
-    critic = Critic(env.observation_space, [256, 64])
+    actor = Actor(env.observation_space, env.action_space, [256, 64]).to(device)
+    actor_target = Actor(env.observation_space, env.action_space, [256, 64]).to(device)
+    actor_target.load_state_dict(actor.state_dict())
 
-    actorOptim = torch.optim.Adam(actor.parameters(), lr=a_lr)
-    criticOptim = torch.optim.Adam(critic.parameters(), lr=c_lr)
+    critic = Critic(env.observation_space, [256, 64]).to(device)
+    critic_target = Critic(env.observation_space, [256, 64]).to(device)
+    critic_target.load_state_dict(critic.state_dict())
+
+    actorOptim = torch.optim.Adam(actor_target.parameters(), lr=a_lr)
+    criticOptim = torch.optim.Adam(critic_target.parameters(), lr=c_lr)
+
+    print(sum(p.numel() for p in actor.parameters()))
+    print(sum(p.numel() for p in critic.parameters()))
 
     memory = Memory(env.observation_space, env.action_space)
 
-    def update(updates: int = 50):
+    def update(update_count):
 
-        states, actions, rewards, next_states, _ = tuple(map(lambda x: torch.as_tensor(x, dtype=torch.float32), memory.get()))
-        
-        actorOptim.zero_grad()
-        with torch.no_grad():
-            predicted_value = critic(states)
-            expected_value = rewards + gamma * critic(next_states)
-        tempDiff: torch.Tensor = expected_value - predicted_value
-        log_probs = actor.log_probs(states, actions)
-        actor_loss = -(log_probs * tempDiff.abs()).mean()
-        actor_loss.backward()
-        actorOptim.step()
-
-        for _ in range(updates):
-            states, actions, rewards, next_states, _ = tuple(map(lambda x: torch.as_tensor(x, dtype=torch.float32), memory.get(batchSize=128)))
+        if memory.size() >= batch_size: 
+            states, actions, rewards, next_states, dones = tuple(map(lambda x: torch.as_tensor(x, dtype=torch.float32).to(device), memory.get(batchSize=batch_size)))
 
             criticOptim.zero_grad()
-            predicted_value = critic(states)
-            with torch.no_grad():
-                expected_value = rewards + gamma * critic(next_states)
-            tempDiff: torch.Tensor = expected_value - predicted_value
-            critic_loss = (tempDiff**2).mean()
+            predicted_value = critic_target(states)
+            expected_value = rewards + gamma * critic(next_states) * (1 - dones)
+            critic_loss = nn.functional.mse_loss(predicted_value, expected_value)
             critic_loss.backward()
             criticOptim.step()
 
+            actorOptim.zero_grad()
+            predicted_value = critic_target(states)
+            pred_actions, log_probs = actor_target.act(states)
+            actor_loss = (-log_probs * predicted_value).mean()
+            actor_loss.backward()
+            actorOptim.step()
+
+            if update_count % update_freq == 0:
+
+                actor.load_state_dict(actor_target.state_dict())
+                critic.load_state_dict(critic_target.state_dict())
+
 
     episodeRewards = []
+    update_count = 0
 
-    for episode in range(episodes):
+    for episode in range(1, episodes+1):
         state = env.reset()
         total_reward = 0
         # env.render()
         for step in range(max_episode_len):
-            action, _ = actor.act(torch.as_tensor(state, dtype=torch.float32))
+            action, _ = actor.act(torch.as_tensor(state, dtype=torch.float32).to(device), sample=True)
             next_state, reward, done, _ = env.step(action)
             total_reward += reward
 
-            memory.add(state, action, reward, next_state, action)
+            memory.add(state, action, reward, next_state, done)
             state = next_state
+            update(update_count)
+            update_count += 1
             # env.render()
 
             if done:
                 break
 
-        update()
         print(f"Episode {episode}: # Steps = {step}, Reward = {total_reward}")
         episodeRewards.append(total_reward)
 
