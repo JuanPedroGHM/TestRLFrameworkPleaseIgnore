@@ -1,5 +1,5 @@
 import argparse
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Callable
 
 import gym
 import matplotlib.pyplot as plt
@@ -13,8 +13,8 @@ def mlp(layers: List[int], activation: nn.Module= nn.ReLU, dropout=False, batchN
     model = []
     lastOutputSize = layers[0]
     for index, layerSize in enumerate(layers[1:]):
-        model.append(nn.Linear(lastOutputSize, layerSize))
-        if index < len(layers) - 1:
+        if index < len(layers) - 2:
+            model.append(nn.Linear(lastOutputSize, layerSize))
             if batchNorm:
                 model.append(nn.LayerNorm(layerSize))
             model.append(activation())
@@ -46,14 +46,17 @@ class Actor(nn.Module):
 
         return mu, std
 
-    def act(self, obs, sample:bool=False):
+    def act(self, obs, sample:bool=False, prevActions=None):
         mu, std = self.forward(obs)
         dist = Normal(mu, std)
         if sample:
             action = dist.sample()
             return action.cpu().data.numpy(), dist.log_prob(action)
         else:
-            return mu, dist.log_prob(mu)
+            if prevActions != None:
+                return mu, dist.log_prob(prevActions)
+            else:
+                return mu, dist.log_prob(mu)
 
 
 class Critic(nn.Module):
@@ -115,24 +118,32 @@ class Memory():
                 return self.state[:self.ptr,:], self.action[:self.ptr,:], self.reward[:self.ptr,:], self.next_state[:self.ptr,:], self.done[:self.ptr,:]
 
 
+def normFunc(inputSpace: gym.spaces.Box, low: int = -1, high: int = 1) -> Callable[[np.ndarray],np.ndarray]:
+
+    iHigh = inputSpace.high
+    iLow = inputSpace.low
+    alpha = inputSpace.high - inputSpace.low
+    beta = high - low
+    return lambda x: ((x - iLow)/alpha)*beta + low
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="MountainCarContinuous-v0")
-    parser.add_argument("--a_lr", type=float, default=1e-2)
+    parser.add_argument("--a_lr", type=float, default=1e-3)
     parser.add_argument("--c_lr", type=float, default=5e-3)
-    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--discount", type=float, default=0.99)
     parser.add_argument("--episodes", type=int, default=500)
     parser.add_argument("--max_episode_len", type=int, default=200)
-    parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument("--update_freq", type=int, default=50)
+    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--update_freq", type=int, default=100)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
 
     args = parser.parse_args()
     
-    gamma = args.gamma
+    discount = args.discount
     a_lr = args.a_lr
     c_lr = args.c_lr
     episodes = args.episodes
@@ -143,65 +154,74 @@ if __name__ == '__main__':
     # Setup
 
     env = gym.make(args.env)
+    norm = normFunc(env.observation_space)
 
-    actor = Actor(env.observation_space, env.action_space, [256, 64]).to(device)
-    actor_target = Actor(env.observation_space, env.action_space, [256, 64]).to(device)
-    actor_target.load_state_dict(actor.state_dict())
-
-    critic = Critic(env.observation_space, [256, 64]).to(device)
-    critic_target = Critic(env.observation_space, [256, 64]).to(device)
-    critic_target.load_state_dict(critic.state_dict())
-
-    actorOptim = torch.optim.Adam(actor_target.parameters(), lr=a_lr)
-    criticOptim = torch.optim.Adam(critic_target.parameters(), lr=c_lr)
-
+    actor = Actor(env.observation_space, env.action_space, [50, 16]).to(device)
+    critic = Critic(env.observation_space, [50, 16]).to(device)
+    
     print(sum(p.numel() for p in actor.parameters()))
     print(sum(p.numel() for p in critic.parameters()))
 
+    actorOptim = torch.optim.Adam(actor.parameters(), lr=a_lr)
+    criticOptim = torch.optim.Adam(critic.parameters(), lr=c_lr)
+
     memory = Memory(env.observation_space, env.action_space)
 
-    def update(update_count):
+
+    
+    def update():
+
+        mean_loss = 0;
+        mean_actorloss = 0;
 
         if memory.size() >= batch_size: 
-            states, actions, rewards, next_states, dones = tuple(map(lambda x: torch.as_tensor(x, dtype=torch.float32).to(device), memory.get(batchSize=batch_size)))
+            for _ in range(10):
+                states, actions, rewards, next_states, dones = tuple(map(lambda x: torch.as_tensor(x, dtype=torch.float32).to(device), memory.get(batchSize=batch_size)))
 
-            criticOptim.zero_grad()
-            predicted_value = critic_target(states)
-            expected_value = rewards + gamma * critic(next_states) * (1 - dones)
-            critic_loss = nn.functional.mse_loss(predicted_value, expected_value)
-            critic_loss.backward()
-            criticOptim.step()
+                criticOptim.zero_grad()
+                predicted_value = critic(states)
+                with torch.no_grad():
+                    expected_value = rewards + discount * critic(next_states) * (1 - dones)
+                critic_loss = nn.functional.mse_loss(predicted_value, expected_value)
+                critic_loss.backward()
+                criticOptim.step()
 
+                ## Gather stats
+                mean_loss += critic_loss.item()
+
+            states, actions, rewards, next_states, dones = tuple(map(lambda x: torch.as_tensor(x, dtype=torch.float32).to(device), memory.get()))
             actorOptim.zero_grad()
-            predicted_value = critic_target(states)
-            pred_actions, log_probs = actor_target.act(states)
-            actor_loss = (-log_probs * predicted_value).mean()
+            import pdb; pdb.set_trace()
+            predicted_value = critic(states)
+            pred_actions, log_probs = actor.act(states, sample=False, prevActions=actions)
+            actor_loss = (-log_probs * (predicted_value - rewards.mean())).mean()
             actor_loss.backward()
             actorOptim.step()
 
-            if update_count % update_freq == 0:
+            #Gather stats
 
-                actor.load_state_dict(actor_target.state_dict())
-                critic.load_state_dict(critic_target.state_dict())
+            print(f'Critic loss: {mean_loss/10}, Actor loss: {mean_actorloss/10}')
+                
 
 
     episodeRewards = []
-    update_count = 0
+    steps = 0
 
     for episode in range(1, episodes+1):
-        state = env.reset()
+        state = norm(env.reset())
         total_reward = 0
         # env.render()
         for step in range(max_episode_len):
             action, _ = actor.act(torch.as_tensor(state, dtype=torch.float32).to(device), sample=True)
             next_state, reward, done, _ = env.step(action)
             total_reward += reward
+            next_state = norm(next_state)
 
             memory.add(state, action, reward, next_state, done)
             state = next_state
-            update(update_count)
-            update_count += 1
-            # env.render()
+            steps += 1
+            if steps % update_freq == 0:
+                update()
 
             if done:
                 break
