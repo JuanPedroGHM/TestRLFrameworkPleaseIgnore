@@ -1,18 +1,20 @@
 import numpy as np
 from functools import reduce
 from sklearn.metrics.pairwise import rbf_kernel
-from typing import Callable, List
+from typing import Callable, List, Tuple
 
 
 class Kernel():
 
-    def __init__(self, f: Callable = None, params: np.ndarray = None):
+    def __init__(self, f: Callable = None, params: np.ndarray = None, bounds: List[Tuple] = None):
         self.kernelFunctions: List[Callable] = []
         self.paramsArray: List[np.ndarray] = []
+        self.bounds: List[Tuple] = []
 
-        if f is not None and params is not None:
+        if f is not None and params is not None and bounds is not None:
             self.kernelFunctions.append(f)
             self.paramsArray.append(params)
+            self.bounds.extend(bounds)
     
     def __call__(self, x1: np.ndarray, x2: np.ndarray = None, customParams: np.ndarray = None) -> np.ndarray:
 
@@ -42,6 +44,7 @@ class Kernel():
     def __add__(self, kernel2):
         self.kernelFunctions.extend(kernel2.kernelFunctions)
         self.paramsArray.extend(kernel2.paramsArray)
+        self.bounds.extend(kernel2.bounds)
         return self
 
 
@@ -60,7 +63,7 @@ class Kernel():
     @classmethod
     def RBF(cls, alpha = 1.0, length=1.0):
         f = lambda x0, x1, params: params[0] * rbf_kernel(x0,Y=x1, gamma=params[1]) 
-        return cls(f, np.array([alpha, length]))
+        return cls(f, np.array([alpha, length]), [(0.0001, None), (0.0001, None)])
 
     @classmethod
     def Noise(cls, noise=1.0):
@@ -70,4 +73,4 @@ class Kernel():
             else:
                 return np.zeros((x1.shape[0], x2.shape[0]))
 
-        return cls(f, np.array([noise]))
+        return cls(f, np.array([noise]), [(0.00001, None)])
