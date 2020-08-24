@@ -53,11 +53,11 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
 
-    DATAPOINTS = 50 
-    f = lambda x: (1/x) * np.sin(10 * 2 * np.pi * x)
+    DATAPOINTS = 100 
+    f = lambda x: (1/x) * np.sin(5 * 2 * np.pi * x)
 
     X_DATA = np.random.uniform(-1.0, 1.0, DATAPOINTS).reshape((DATAPOINTS, 1))
-    Y_DATA = f(X_DATA) + np.random.standard_normal(DATAPOINTS).reshape((DATAPOINTS,1))
+    Y_DATA = f(X_DATA) + np.random.normal(0, 2, DATAPOINTS).reshape((DATAPOINTS,1))
 
     kernel = Kernel.RBF(1, 0.1) + Kernel.Noise(0.01)
     gpModel = GP(X_DATA, Y_DATA, k_function=kernel)
@@ -66,17 +66,22 @@ if __name__ == "__main__":
     y_pred, sigma_pred = gpModel(x)
     y_real = f(x)
 
-    plt.scatter(X_DATA, Y_DATA)
-    plt.plot(x, y_pred)
-    plt.plot(x, y_real)
+    plt.fill(np.concatenate([x, x[::-1]]),
+             np.concatenate([y_pred - 1.96 * sigma_pred,
+                             (y_pred + 1.96 * sigma_pred)[::-1]]),
+             alpha=.1, fc='c', ec=None)
+    plt.scatter(X_DATA, Y_DATA, marker='*', c='r')
+    plt.plot(x, y_pred, 'b-', label="GP")
+    plt.plot(x, y_real, 'r--', label="f(x)")
+    plt.legend()
     plt.show()
 
 
     # 2D Test
-    DATAPOINTS = 100
-    f = lambda x: x[:,[1]] * 5  * np.sin(2 * np.pi * x[:,[0]])
+    DATAPOINTS = 200
+    f = lambda x: x[:,[1]] * 10  * np.sin(10 * 2 * np.pi * x[:,[0]])
     X_DATA = np.random.uniform(-1, 1.0, DATAPOINTS * 2).reshape((DATAPOINTS, 2))
-    Y_DATA = f(X_DATA) + np.random.standard_normal(DATAPOINTS).reshape((DATAPOINTS, 1))
+    Y_DATA = f(X_DATA) + np.random.normal(0, 2, DATAPOINTS).reshape((DATAPOINTS, 1))
 
     x = np.linspace(-1.0, 1.0, 20).reshape((20,))
     x1, x2 = np.meshgrid(x, x)

@@ -66,37 +66,39 @@ configSystem = {'A':[[0.9590,0.03697],[-0.5915, 0.0718]],
                 }
 
 configReference = { 'N':1000,
-                    'h':5,
+                    'h': 3,
                     'dt': 0.1,
                     'num_of_rand_points': 50,
                     'noise_var': 0.0
                     }
 
-ref = Reference(configReference)
-ref.generateReference()
+if __name__ == "__main__":
 
-sys = LinearSystem(configSystem)
+    ref = Reference(configReference)
+    ref.generateReference()
 
-logger = Logger()
+    sys = LinearSystem(configSystem)
 
-# simple simulation
-x = sys.x
-for k in range(configReference["N"]-configReference["h"]):
-    r = ref.getNext()
-    u = controller(x,r)
-    x = sys.apply(u)
+    logger = Logger()
 
-    logger.log(x,u,r)
+    # simple simulation
+    x = sys.x
+    for k in range(configReference["N"]-configReference["h"]):
+        r = ref.getNext()
+        u = controller(x,r)
+        x = sys.apply(u)
 
-x = [x[0] for x in logger.state_list]
-u = [u[0] for u in logger.action_list]
-r = [r[0] for r in logger.reference_list]
-plt.figure(1)
-plt.plot(r,'--',label = "r")
-plt.plot(x,label = "x")
-plt.plot(u,label = "u")
-plt.ylim((-10,10))
+        logger.log(x,u,r)
 
-plt.grid()
-plt.legend()
-plt.show()
+    x = [x[0] for x in logger.state_list]
+    u = [u[0] for u in logger.action_list]
+    r = [r[0] for r in logger.reference_list]
+    plt.figure(1)
+    plt.plot(r,'--',label = "r")
+    plt.plot(x,label = "x")
+    plt.plot(u,label = "u")
+    plt.ylim((-10,10))
+
+    plt.grid()
+    plt.legend()
+    plt.show()

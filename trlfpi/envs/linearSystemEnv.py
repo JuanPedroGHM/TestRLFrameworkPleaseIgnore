@@ -1,4 +1,5 @@
 import gym
+from gym.spaces import Box
 import numpy as np
 
 from .simple_system_reference import LinearSystem, Reference, configSystem, configReference
@@ -7,9 +8,11 @@ class LinearSystemEnv(gym.Env):
 
     metadata={'render.modes': []}
     def __init__(self):
-        super().__init__(self)
+        super().__init__()
         self.system = LinearSystem(configSystem)
         self.reference = Reference(configReference)
+        self.observation_space =  Box(low=-np.inf, high=np.inf, shape=(1,) )
+        self.action_space = Box(low=-np.inf, high=np.inf, shape=(1,))
         self.setup()
     
     def setup(self):
