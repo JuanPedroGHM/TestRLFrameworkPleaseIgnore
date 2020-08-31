@@ -2,19 +2,22 @@ import gym
 from gym.spaces import Box
 import numpy as np
 
-from .simple_system_reference import LinearSystem, Reference, configSystem, configReference
+from .simple_system_reference import LinearSystem, Reference, configSystem, configReference, Logger
+
 
 class LinearSystemEnv(gym.Env):
 
-    metadata={'render.modes': []}
+    metadata = {'render.modes': []}
+
     def __init__(self):
         super().__init__()
         self.system = LinearSystem(configSystem)
         self.reference = Reference(configReference)
-        self.observation_space =  Box(low=-np.inf, high=np.inf, shape=(1,) )
+        self.h = configReference['h']
+        self.observation_space = Box(low=-np.inf, high=np.inf, shape=(7,))
         self.action_space = Box(low=-np.inf, high=np.inf, shape=(1,))
         self.setup()
-    
+
     def setup(self):
         self.system.x = np.random.normal(configSystem["x0"], 0.5)
 
@@ -22,19 +25,22 @@ class LinearSystemEnv(gym.Env):
         self.reference.counter = 1
 
         self.done = False
-
+        ref = self.reference.getNext()
+        return np.hstack((self.system.x.T, ref[1:, :].T))
 
     def step(self, action):
-        lastRef = self.reference.r[self.reference.counter]
+        ref = self.reference.getNext()
         systemOut = self.system.apply(action)
 
-        reward = (lastRef - systemOut)**2
-        observation = np.hstack(systemOut,self.reference.getNext())
+        reward = -(ref[0, 0] - systemOut[0, 0])**2
+        observation = np.hstack((self.system.x.T, ref[1:, :].T))
 
-        self.done = (self.reference.counter == self.reference.N - self.reference.h)
+        self.done = self.reference.counter == 1
 
-        return observation, reward, self.done, None 
+        return observation, reward, self.done, None
 
+    def predict(self, x, a):
+        return self.system.predict(x, a)
 
     def reset(self):
-        self.setup()
+        return self.setup()

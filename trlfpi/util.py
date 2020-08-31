@@ -12,7 +12,6 @@ def generatePlot(name, y, x=None, folder="./experiments/vpg/plots"):
         plt.plot(y)
     plt.savefig(f'{folder}/{name}.png')
     plt.close()
-    
 
 
 def normFunc(inputSpace: gym.spaces.Box, low: int = -1, high: int = 1) -> Callable[[np.ndarray],np.ndarray]:

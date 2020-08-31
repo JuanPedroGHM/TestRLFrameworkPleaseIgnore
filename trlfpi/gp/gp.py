@@ -4,13 +4,13 @@ from typing import List, Callable
 from functools import reduce
 from .kernel import Kernel
 
+
 class GP():
 
-    def __init__(self, X, Y, k_function: Kernel = Kernel.RBF(), optimize:bool=True):
+    def __init__(self, k_function: Kernel = Kernel.RBF()):
         self.kernel = k_function
-        self.fit(X,Y, optimize=optimize)
 
-    def forward(self, x): 
+    def forward(self, x):
         k_1 = self.kernel(self.X_TRAIN, x)
         k_2 = self.kernel(x, x)
 
@@ -23,24 +23,19 @@ class GP():
 
     def logLikelihood(self, params: List[float]):
         L = np.linalg.cholesky(self.kernel(self.X_TRAIN, self.X_TRAIN, customParams=params))
-        alpha = np.linalg.solve(L.T, np.linalg.solve(L, self.Y_TRAIN)) 
+        alpha = np.linalg.solve(L.T, np.linalg.solve(L, self.Y_TRAIN))
 
         return 0.5 * self.Y_TRAIN.T @ alpha + np.sum(np.log(np.diag(L)))
 
-    def fit(self, X, Y, optimize:bool= True):
+    def fit(self, X, Y, optimize=True):
         self.X_TRAIN = X
         self.Y_TRAIN = Y
         if optimize:
-            print(self.kernel.params)
-            print(self.kernel.bounds)
             res = optim.minimize(self.logLikelihood, self.kernel.params, bounds=self.kernel.bounds)
-            print(res.x)
             self.kernel.params = res.x
 
         self.L = np.linalg.cholesky(self.kernel(X, X))
-        self.alpha =np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.Y_TRAIN)) 
-
-
+        self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.Y_TRAIN))
 
     def __call__(self, x):
         return self.forward(x)
@@ -49,12 +44,11 @@ class GP():
 if __name__ == "__main__":
 
     ## 1D Test
-
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
 
-    DATAPOINTS = 100 
-    f = lambda x: (1/x) * np.sin(5 * 2 * np.pi * x)
+    DATAPOINTS = 100
+    f = lambda x: (1 / x) * np.sin(5 * 2 * np.pi * x)
 
     X_DATA = np.random.uniform(-1.0, 1.0, DATAPOINTS).reshape((DATAPOINTS, 1))
     Y_DATA = f(X_DATA) + np.random.normal(0, 2, DATAPOINTS).reshape((DATAPOINTS,1))

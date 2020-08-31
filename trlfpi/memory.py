@@ -1,7 +1,37 @@
 import numpy as np
 import gym
 
-class Memory():
+
+class GPMemory():
+
+    def __init__(self, inputDims: int, maxSize=500):
+        self.maxSize = maxSize
+        self.inputs = np.zeros((maxSize, inputDims))
+        self.outputs = np.zeros((maxSize, 1))
+        self.ptr = 0
+        self.looped = False
+
+    @property
+    def size(self):
+        return self.maxSize if self.looped else self.ptr
+
+    def add(self, x: np.ndarray, y: np.ndarray):
+        if self.ptr >= self.maxSize:
+            self.ptr = 0
+            self.looped = True
+
+        assert(x.shape[1] == self.inputs.shape[1])
+
+        self.inputs[self.ptr, :] = x
+        self.outputs[self.ptr] = y
+        self.ptr += 1
+
+    @property
+    def data(self):
+        return self.inputs, self.outputs
+
+
+class GymMemory():
 
     def __init__(self, observation_space: gym.spaces.Box, action_space: gym.spaces.Box, maxSize=10000):
         self.maxSize = maxSize
@@ -13,6 +43,7 @@ class Memory():
         self.ptr = 0
         self.looped = False
 
+    @property
     def size(self):
         return self.maxSize if self.looped else self.ptr
 
@@ -21,11 +52,11 @@ class Memory():
             self.ptr = 0
             self.looped = True
 
-        self.state[self.ptr,:] = state
-        self.action[self.ptr,:] = act
-        self.reward[self.ptr,:] = reward
-        self.next_state[self.ptr,:] = next_state
-        self.done[self.ptr,:] = done
+        self.state[self.ptr, :] = state
+        self.action[self.ptr, :] = act
+        self.reward[self.ptr, :] = reward
+        self.next_state[self.ptr, :] = next_state
+        self.done[self.ptr, :] = done
 
         self.ptr += 1
 
