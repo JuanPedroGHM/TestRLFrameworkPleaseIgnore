@@ -32,7 +32,7 @@ class LinearSystemEnv(gym.Env):
         ref = self.reference.getNext()
         systemOut = self.system.apply(action)
 
-        reward = -(ref[0, 0] - systemOut[0, 0])**2
+        reward = -1 * (ref[0, 0] - systemOut[0, 0])**2
         observation = np.hstack((self.system.x.T, ref[1:, :].T))
 
         self.done = self.reference.counter == 1

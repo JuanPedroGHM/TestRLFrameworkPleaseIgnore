@@ -28,7 +28,10 @@ class GPMemory():
 
     @property
     def data(self):
-        return self.inputs, self.outputs
+        if self.size == self.maxSize:
+            return self.inputs, self.outputs
+        else:
+            return self.inputs[:self.ptr], self.outputs[:self.ptr]
 
 
 class GymMemory():
@@ -37,7 +40,7 @@ class GymMemory():
         self.maxSize = maxSize
         self.state = np.zeros((maxSize, observation_space.shape[0]))
         self.action = np.zeros((maxSize, action_space.shape[0]))
-        self.reward = np.zeros(( maxSize, 1 ))
+        self.reward = np.zeros((maxSize, 1))
         self.next_state = np.zeros((maxSize, observation_space.shape[0]))
         self.done = np.zeros((maxSize, 1))
         self.ptr = 0

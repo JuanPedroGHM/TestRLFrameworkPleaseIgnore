@@ -67,8 +67,9 @@ class Critic():
 
     def update(self, x: np.ndarray, y: np.ndarray):
         self.memory.add(x, y)
-        X, Y = self.memory.data
-        self.model.fit(X, Y)
+        if self.memory.size <= 10:
+            X, Y = self.memory.data
+            self.model.fit(X, Y)
 
     def predict(self, x: np.ndarray):
         if self.memory.size != 0:
@@ -169,10 +170,10 @@ if __name__ == '__main__':
             # B x T x D
             currentStates = states[:, :2]
             refs = states[:, 2:]
-            state_p = torch.zeros((batch_size, nRefs, 2))
-            deltas = torch.zeros((batch_size, nRefs))
-            next_actions = torch.zeros((batch_size, nRefs))
-            log_probs = torch.zeros((batch_size, nRefs))
+            state_p = torch.zeros((batch_size, nRefs, 2)).to(device)
+            deltas = torch.zeros((batch_size, nRefs)).to(device)
+            next_actions = torch.zeros((batch_size, nRefs)).to(device)
+            log_probs = torch.zeros((batch_size, nRefs)).to(device)
             
             for i in range(nRefs):
                 actorInput = torch.cat((currentStates, refs[:,i:nRefs + i]), 1)
@@ -181,16 +182,17 @@ if __name__ == '__main__':
                 next_actions[:, [i]] = tmpAct
                 log_probs[:, [i]] = tmpLP
 
-                currentState = torch.as_tensor(env.predict(currentStates.T.data.numpy(), actions[:, [0]].T.data.numpy()))
+                currentState = torch.as_tensor(env.predict(currentStates.T.cpu().data.numpy(),
+                                                           actions[:, [0]].T.cpu().data.numpy()))
                 currentState = currentState.T
                 state_p[:, i, :] = currentState
 
             deltas = state_p[:,:,0] - refs[:, :nRefs]
 
             criticInput = torch.cat((actions[:, [0]], deltas), 1).cpu().data.numpy()
-            q_values, _ = critic(criticInput)
+            q_values = torch.as_tensor(critic(criticInput)[0]).to(device)
 
-            actor_loss = (-log_probs[:, [0]] * (torch.as_tensor(q_values) - rewards.mean())).mean()
+            actor_loss = (-log_probs[:, [0]] * (q_values - rewards.mean())).mean()
             actor_loss.backward()
             actorOptim.step()
 

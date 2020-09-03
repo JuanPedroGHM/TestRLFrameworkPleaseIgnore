@@ -25,7 +25,9 @@ class GP():
         L = np.linalg.cholesky(self.kernel(self.X_TRAIN, self.X_TRAIN, customParams=params))
         alpha = np.linalg.solve(L.T, np.linalg.solve(L, self.Y_TRAIN))
 
-        return 0.5 * self.Y_TRAIN.T @ alpha + np.sum(np.log(np.diag(L)))
+        result = 0.5 * self.Y_TRAIN.T @ alpha + np.sum(np.log(np.diag(L)))
+
+        return result.item()
 
     def fit(self, X, Y, optimize=True):
         self.X_TRAIN = X
@@ -54,7 +56,8 @@ if __name__ == "__main__":
     Y_DATA = f(X_DATA) + np.random.normal(0, 2, DATAPOINTS).reshape((DATAPOINTS,1))
 
     kernel = Kernel.RBF(1, 0.1) + Kernel.Noise(0.01)
-    gpModel = GP(X_DATA, Y_DATA, k_function=kernel)
+    gpModel = GP(kernel)
+    gpModel.fit(X_DATA, Y_DATA)
 
     x = np.linspace(-1, 1, 1000).reshape((1000,1))
     y_pred, sigma_pred = gpModel(x)
@@ -83,7 +86,8 @@ if __name__ == "__main__":
     y = f(xx)
 
     kernel = Kernel.RBF(1, 0.1) + Kernel.Noise(0.01)
-    gpModel = GP(X_DATA, Y_DATA, k_function=kernel)
+    gpModel = GP(kernel)
+    gpModel.fit(X_DATA, Y_DATA)
     y_pred, sigma_pred = gpModel(xx)
 
     fig = plt.figure()
