@@ -2,7 +2,7 @@ import gym
 from gym.spaces import Box
 import numpy as np
 
-from .simple_system_reference import LinearSystem, Reference, configSystem, configReference, Logger
+from .simple_system_reference import LinearSystem, Reference, configSystem, configReference
 
 
 class LinearSystemEnv(gym.Env):

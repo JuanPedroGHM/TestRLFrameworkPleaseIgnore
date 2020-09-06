@@ -78,7 +78,7 @@ if __name__ == "__main__":
     DATAPOINTS = 200
     f = lambda x: x[:,[1]] * 10  * np.sin(10 * 2 * np.pi * x[:,[0]])
     X_DATA = np.random.uniform(-1, 1.0, DATAPOINTS * 2).reshape((DATAPOINTS, 2))
-    Y_DATA = f(X_DATA) + np.random.normal(0, 2, DATAPOINTS).reshape((DATAPOINTS, 1))
+    Y_DATA = f(X_DATA) + np.random.normal(0, 0.1, DATAPOINTS).reshape((DATAPOINTS, 1))
 
     x = np.linspace(-1.0, 1.0, 20).reshape((20,))
     x1, x2 = np.meshgrid(x, x)
