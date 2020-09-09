@@ -9,6 +9,8 @@ class GP():
 
     def __init__(self, k_function: Kernel = Kernel.RBF()):
         self.kernel = k_function
+        self.sigma_n = 1.0
+        self.sigma_n_bounds = [1e-5, np.inf]
 
     def forward(self, x):
         k_1 = self.kernel(self.X_TRAIN, x)
@@ -22,7 +24,10 @@ class GP():
         return mu_pred, sigma_pred
 
     def logLikelihood(self, params: List[float]):
-        L = np.linalg.cholesky(self.kernel(self.X_TRAIN, self.X_TRAIN, customParams=params))
+        sigma_n = params[0]
+        kernelParams = params[1:]
+        K = self.kernel(self.X_TRAIN, self.X_TRAIN, customParams=kernelParams)
+        L = np.linalg.cholesky(K + (sigma_n ** 2) * np.identity(K.shape[0]))
         alpha = np.linalg.solve(L.T, np.linalg.solve(L, self.Y_TRAIN))
 
         result = 0.5 * self.Y_TRAIN.T @ alpha + np.sum(np.log(np.diag(L)))
@@ -33,10 +38,16 @@ class GP():
         self.X_TRAIN = X
         self.Y_TRAIN = Y
         if optimize:
-            res = optim.minimize(self.logLikelihood, self.kernel.params, bounds=self.kernel.bounds)
-            self.kernel.params = res.x
+            params = np.hstack((self.sigma_n, self.kernel.params))
+            bounds = [self.sigma_n_bounds] + self.kernel.bounds
+            print(params)
+            res = optim.minimize(self.logLikelihood, params, bounds=bounds)
+            print(res.x)
+            
+            self.sigma_n = res.x[0]
+            self.kernel.params = res.x[1:]
 
-        self.L = np.linalg.cholesky(self.kernel(X, X))
+        self.L = np.linalg.cholesky(self.kernel(X, X) + (self.sigma_n ** 2) * np.identity(X.shape[0]))
         self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.Y_TRAIN))
 
     def __call__(self, x):
@@ -45,21 +56,21 @@ class GP():
 
 if __name__ == "__main__":
 
-    ## 1D Test
+    # 1D Test
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
 
-    DATAPOINTS = 100
+    DATAPOINTS = 200
     f = lambda x: (1 / x) * np.sin(5 * 2 * np.pi * x)
 
     X_DATA = np.random.uniform(-1.0, 1.0, DATAPOINTS).reshape((DATAPOINTS, 1))
-    Y_DATA = f(X_DATA) + np.random.normal(0, 2, DATAPOINTS).reshape((DATAPOINTS,1))
+    Y_DATA = f(X_DATA) + np.random.normal(0, 2, DATAPOINTS).reshape((DATAPOINTS, 1))
 
-    kernel = Kernel.RBF(1, 0.1) + Kernel.Noise(0.01)
+    kernel = Kernel.RBF(1, 0.1)
     gpModel = GP(kernel)
     gpModel.fit(X_DATA, Y_DATA)
 
-    x = np.linspace(-1, 1, 1000).reshape((1000,1))
+    x = np.linspace(-1, 1, 1000).reshape((1000, 1))
     y_pred, sigma_pred = gpModel(x)
     y_real = f(x)
 
@@ -73,28 +84,28 @@ if __name__ == "__main__":
     plt.legend()
     plt.show()
 
-
     # 2D Test
     DATAPOINTS = 200
-    f = lambda x: x[:,[1]] * 10  * np.sin(10 * 2 * np.pi * x[:,[0]])
-    X_DATA = np.random.uniform(-1, 1.0, DATAPOINTS * 2).reshape((DATAPOINTS, 2))
-    Y_DATA = f(X_DATA) + np.random.normal(0, 0.1, DATAPOINTS).reshape((DATAPOINTS, 1))
+    TEST = 50
+    f = lambda x: (x[:, [1]] - x[:, [0]]) * 20 * np.sin(2 * np.pi * x[:, [0]])
+    X_DATA = np.random.uniform(-1, 1, DATAPOINTS * 2).reshape((DATAPOINTS, 2))
+    Y_DATA = f(X_DATA) + np.random.normal(0, 0.0001, DATAPOINTS).reshape((DATAPOINTS, 1))
 
-    x = np.linspace(-1.0, 1.0, 20).reshape((20,))
+    x = np.linspace(-1.0, 1.0, TEST).reshape((TEST,))
     x1, x2 = np.meshgrid(x, x)
-    xx = np.stack((x1, x2), axis=2).reshape((20*20,2))
+    xx = np.stack((x1, x2), axis=2).reshape((TEST * TEST, 2))
     y = f(xx)
 
-    kernel = Kernel.RBF(1, 0.1) + Kernel.Noise(0.01)
+    kernel = Kernel.RBF(1, [1.0, 1.0])
     gpModel = GP(kernel)
     gpModel.fit(X_DATA, Y_DATA)
     y_pred, sigma_pred = gpModel(xx)
 
     fig = plt.figure()
     ax = fig.add_subplot(211, projection='3d')
-    ax.plot_trisurf(xx[:,0], xx[:,1], y.reshape((20*20,)), color="red")
-    ax.scatter(X_DATA[:,[0]], X_DATA[:,[1]], Y_DATA)
+    ax.plot_trisurf(xx[:, 0], xx[:, 1], y.reshape((TEST * TEST,)), color="red")
+    ax.scatter(X_DATA[:, [0]], X_DATA[:, [1]], Y_DATA)
 
     ax = fig.add_subplot(212, projection='3d')
-    ax.plot_trisurf(xx[:,0], xx[:,1], y_pred.reshape((20*20,)))
+    ax.plot_trisurf(xx[:, 0], xx[:, 1], y_pred.reshape((TEST * TEST,)))
     plt.show()
