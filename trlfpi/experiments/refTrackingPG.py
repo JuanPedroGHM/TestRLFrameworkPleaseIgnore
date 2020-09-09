@@ -14,7 +14,6 @@ if __name__ == '__main__':
     parser.add_argument("--env", type=str, default="linear-with-ref-v0")
     parser.add_argument("--nRefs", type=int, default=3)
     parser.add_argument("--a_lr", type=float, default=1e-5)
-    parser.add_argument("--c_lr", type=float, default=1e-5)
     parser.add_argument("--discount", type=float, default=0.99)
     parser.add_argument("--episodes", type=int, default=1000)
     parser.add_argument("--max_episode_len", type=int, default=1000)
@@ -31,7 +30,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     discount = args.discount
     a_lr = args.a_lr
-    c_lr = args.c_lr
     episodes = args.episodes
     max_episode_len = args.max_episode_len
     batch_size = args.batch_size
@@ -50,8 +48,8 @@ if __name__ == '__main__':
 
     # Smaller net
     # Init policy network
-    actor = NNActor(2 + nRefs, 1, [32], outputActivation=nn.Tanh).to(device)
-    actorTarget = NNActor(2 + nRefs, 1, [32], outputActivation=nn.Tanh).to(device)
+    actor = NNActor(2 + nRefs, 1, [64], outputActivation=nn.Tanh).to(device)
+    actorTarget = NNActor(2 + nRefs, 1, [64], outputActivation=nn.Tanh).to(device)
     actorTarget.load_state_dict(actor.state_dict())
     actorTarget.eval()
 
@@ -61,23 +59,30 @@ if __name__ == '__main__':
 
     def actWithRef(actorNet, x: np.ndarray, sample=False):
         # x : B x X
-        currentState = x[:, :2]
-        refs = x[:, 2:]
+        if nRefs == 0:
+            currentState = x[:, :2]
+            actorInput = torch.tensor(currentState, dtype=torch.float32, device=device)
+            action, _ = actorNet.act(actorInput, numpy=True, sample=sample)
+            return action, 0
 
-        # B x T x D
-        state_p = np.zeros((nRefs, 2))
-        actions = np.zeros((nRefs, 1))
-        for i in range(nRefs):
-            actorInput = torch.as_tensor(
-                np.hstack((currentState, refs[:, i:nRefs + i])),
-                dtype=torch.float32
-            ).to(device)
-            actions[i, :], _ = actorNet.act(actorInput, numpy=True, sample=sample)
-            currentState = env.predict(currentState.T, actions[[i], :]).T
-            state_p[i, :] = currentState
+        else:
+            currentState = x[:, :2]
+            refs = x[:, 2:]
 
-        deltas = state_p[:, [0]].T - refs[:, :nRefs]
-        return actions[[0], :], deltas
+            # B x T x D
+            state_p = np.zeros((nRefs, 2))
+            actions = np.zeros((nRefs, 1))
+            for i in range(nRefs):
+                actorInput = torch.as_tensor(
+                    np.hstack((currentState, refs[:, i:nRefs + i])),
+                    dtype=torch.float32
+                ).to(device)
+                actions[i, :], _ = actorNet.act(actorInput, numpy=True, sample=sample)
+                currentState = env.predict(currentState.T, actions[[i], :]).T
+                state_p[i, :] = currentState
+
+            deltas = state_p[:, [0]].T - refs[:, :nRefs]
+            return actions[[0], :], deltas
 
     def updateActor():
 
@@ -89,33 +94,42 @@ if __name__ == '__main__':
             # Optimize actor
             actorOptim.zero_grad()
 
-            # B x D
-            currentStates = states[:, :2]
-            refs = states[:, 2:]
+            if nRefs == 0:
+                actorInput = states[:, :2]
+                actions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
 
-            # B x T x D
-            state_p = torch.zeros((batch_size, nRefs, 2)).to(device)
-            next_actions = torch.zeros((batch_size, nRefs)).to(device)
-            log_probs = torch.zeros((batch_size, nRefs)).to(device)
-            discountVector = torch.tensor([[discount**i for i in range(1, nRefs + 1)]]).to(device).T
-            for i in range(nRefs):
-                actorInput = torch.cat((currentStates, refs[:, i:nRefs + i]), 1)
+                actor_loss = (-log_probs * (rewards - rewards.mean())).mean()
+                actor_loss.backward()
+                actorOptim.step()
 
-                tmpAct, tmpLP = actor.act(actorInput, sample=False, prevActions=actions)
-                next_actions[:, [i]] = tmpAct
-                log_probs[:, [i]] = tmpLP
+            else:
+                # B x D
+                currentStates = states[:, :2]
+                refs = states[:, 2:]
 
-                currentState = torch.as_tensor(env.predict(currentStates.T.cpu().data.numpy(),
-                                                           actions[:, [0]].T.cpu().data.numpy()))
-                currentState = currentState.T
-                state_p[:, i, :] = currentState
+                # B x T x D
+                state_p = torch.zeros((batch_size, nRefs, 2)).to(device)
+                next_actions = torch.zeros((batch_size, nRefs)).to(device)
+                log_probs = torch.zeros((batch_size, nRefs)).to(device)
+                discountVector = torch.tensor([[discount**i for i in range(1, nRefs + 1)]]).to(device).T
+                for i in range(nRefs):
+                    actorInput = torch.cat((currentStates, refs[:, i:nRefs + i]), 1)
 
-            deltas = state_p[:, :, 0] - refs[:, :nRefs]
-            G = rewards - torch.pow(deltas, 2) @ discountVector
+                    tmpAct, tmpLP = actor.act(actorInput, sample=False, prevActions=actions)
+                    next_actions[:, [i]] = tmpAct
+                    log_probs[:, [i]] = tmpLP
 
-            actor_loss = (-log_probs[:, [0]] * (G - rewards.mean())).mean()
-            actor_loss.backward()
-            actorOptim.step()
+                    currentState = torch.as_tensor(env.predict(currentStates.T.cpu().data.numpy(),
+                                                               actions[:, [0]].T.cpu().data.numpy()))
+                    currentState = currentState.T
+                    state_p[:, i, :] = currentState
+
+                deltas = state_p[:, :, 0] - refs[:, :nRefs]
+                G = rewards - torch.pow(deltas, 2) @ discountVector
+
+                actor_loss = (-log_probs[:, [0]] * (G - rewards.mean())).mean()
+                actor_loss.backward()
+                actorOptim.step()
 
         return actor_loss
 
@@ -123,6 +137,8 @@ if __name__ == '__main__':
         state = env.reset()
         total_reward = 0
         epsilon = np.exp(-episode * epsilonDecay / episodes)
+        if epsilon <= 0.1:
+            epsilon = 0
 
         states = [state[0, 0]]
 
@@ -136,6 +152,7 @@ if __name__ == '__main__':
             actor_loss = updateActor()
             if actor_loss != 0:
                 report.log('actorLoss', actor_loss)
+                report.log('netSigma', actor.sigma.item())
 
             replayBuff.add(state, action, reward, next_state, done)
             states.append(next_state[0, 0])
@@ -159,5 +176,5 @@ if __name__ == '__main__':
         report.log('rewards', total_reward, episode)
         report.log('epsilon', epsilon, episode)
 
-    report.generatePlots()
+    report.generateReport()
     report.pickle('actor', actor.state_dict())

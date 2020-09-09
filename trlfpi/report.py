@@ -1,7 +1,6 @@
 import pathlib
 import json
 import pickle
-import os
 from torch.utils.tensorboard import SummaryWriter
 import matplotlib.pyplot as plt
 from typing import List, Dict
@@ -58,7 +57,10 @@ class Report():
             else:
                 self.writer.add_scalar(name, value)
 
-    def generatePlots(self):
+    def generateReport(self):
+        with open(f"{self.picklePath}/variables.p", "w+b") as f:
+            pickle.dump(self.variables, f)
+
         for key, values in self.variables.items():
             if len(values) == 2:
                 self.savePlot(key, key, np.array([values[0]]).T, values[1])

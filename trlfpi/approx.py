@@ -39,7 +39,7 @@ class NNActor(nn.Module):
         layers = [inputSpace] + hidden + [actionSpace]
 
         self.mu = mlp(layers, activation=activation, outputActivation=outputActivation)
-        self.sigma = nn.Parameter(0.0 * torch.ones(actionSpace), requires_grad=False)
+        self.sigma = nn.Parameter(0.0 * torch.ones(actionSpace), requires_grad=True)
 
     def forward(self, obs):
         mu = self.mu(obs)

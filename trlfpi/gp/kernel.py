@@ -1,5 +1,4 @@
 import numpy as np
-from functools import reduce
 from sklearn.metrics.pairwise import rbf_kernel
 from typing import Callable, List, Tuple
 
