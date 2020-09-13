@@ -1,7 +1,6 @@
 import numpy as np
 import scipy.optimize as optim
 from typing import List, Callable
-from functools import reduce
 from .kernel import Kernel
 
 
@@ -18,6 +17,9 @@ class GP():
 
         mu_pred = k_1.T @ self.alpha
 
+        if self.mean:
+            mu_pred += self.mean(x)
+
         v = np.linalg.solve(self.L, k_1)
         sigma_pred = k_2 - v.T @ v
 
@@ -26,29 +28,40 @@ class GP():
     def logLikelihood(self, params: List[float]):
         sigma_n = params[0]
         kernelParams = params[1:]
+
         K = self.kernel(self.X_TRAIN, self.X_TRAIN, customParams=kernelParams)
         L = np.linalg.cholesky(K + (sigma_n ** 2) * np.identity(K.shape[0]))
-        alpha = np.linalg.solve(L.T, np.linalg.solve(L, self.Y_TRAIN))
+        if self.mean:
+            alpha = np.linalg.solve(L.T, np.linalg.solve(L, (self.Y_TRAIN - self.mean(self.X_TRAIN))))
+        else:
+            alpha = np.linalg.solve(L.T, np.linalg.solve(L, (self.Y_TRAIN)))
 
         result = 0.5 * self.Y_TRAIN.T @ alpha + np.sum(np.log(np.diag(L)))
 
         return result.item()
 
-    def fit(self, X, Y, optimize=True):
+    def fit(self, X, Y, mean: Callable[[np.ndarray], np.ndarray] = None, optimize=True):
         self.X_TRAIN = X
         self.Y_TRAIN = Y
+
+        if mean:
+            self.mean = mean
+
         if optimize:
             params = np.hstack((self.sigma_n, self.kernel.params))
             bounds = [self.sigma_n_bounds] + self.kernel.bounds
             print(params)
             res = optim.minimize(self.logLikelihood, params, bounds=bounds)
             print(res.x)
-            
+
             self.sigma_n = res.x[0]
             self.kernel.params = res.x[1:]
 
         self.L = np.linalg.cholesky(self.kernel(X, X) + (self.sigma_n ** 2) * np.identity(X.shape[0]))
-        self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.Y_TRAIN))
+        if self.mean:
+            self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, (self.Y_TRAIN - self.mean(self.X_TRAIN))))
+        else:
+            self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.Y_TRAIN))
 
     def __call__(self, x):
         return self.forward(x)
@@ -87,7 +100,7 @@ if __name__ == "__main__":
     # 2D Test
     DATAPOINTS = 200
     TEST = 50
-    f = lambda x: (x[:, [1]] - x[:, [0]]) * 20 * np.sin(2 * np.pi * x[:, [0]])
+    f = lambda x: (x[:, [1]] - x[:, [0]]) * 20 * np.sin(2 * np.pi * x[:, [0]]) + 10
     X_DATA = np.random.uniform(-1, 1, DATAPOINTS * 2).reshape((DATAPOINTS, 2))
     Y_DATA = f(X_DATA) + np.random.normal(0, 0.0001, DATAPOINTS).reshape((DATAPOINTS, 1))
 
@@ -98,7 +111,8 @@ if __name__ == "__main__":
 
     kernel = Kernel.RBF(1, [1.0, 1.0])
     gpModel = GP(kernel)
-    gpModel.fit(X_DATA, Y_DATA)
+    meanF = lambda x: 10
+    gpModel.fit(X_DATA, Y_DATA, meanF)
     y_pred, sigma_pred = gpModel(xx)
 
     fig = plt.figure()
