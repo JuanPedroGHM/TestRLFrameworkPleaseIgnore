@@ -9,7 +9,7 @@ class GP():
     def __init__(self, k_function: Kernel = Kernel.RBF()):
         self.kernel = k_function
         self.sigma_n = 1.0
-        self.sigma_n_bounds = [1e-5, np.inf]
+        self.sigma_n_bounds = [1e-9, np.inf]
 
     def forward(self, x):
         k_1 = self.kernel(self.X_TRAIN, x)
@@ -43,16 +43,12 @@ class GP():
     def fit(self, X, Y, mean: Callable[[np.ndarray], np.ndarray] = None, optimize=True):
         self.X_TRAIN = X
         self.Y_TRAIN = Y
-
-        if mean:
-            self.mean = mean
+        self.mean = mean
 
         if optimize:
             params = np.hstack((self.sigma_n, self.kernel.params))
             bounds = [self.sigma_n_bounds] + self.kernel.bounds
-            print(params)
             res = optim.minimize(self.logLikelihood, params, bounds=bounds)
-            print(res.x)
 
             self.sigma_n = res.x[0]
             self.kernel.params = res.x[1:]
