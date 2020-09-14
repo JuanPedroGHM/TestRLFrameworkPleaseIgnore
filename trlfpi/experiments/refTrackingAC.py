@@ -21,7 +21,7 @@ class Critic():
 
     def update(self, x: np.ndarray, y: np.ndarray):
         self.memory.add(x, y)
-        if self.memory.size <= 10:
+        if self.memory.size >= 2:
             X, Y = self.memory.data
             self.model.fit(X, Y)
 

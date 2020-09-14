@@ -4,7 +4,7 @@ import numpy as np
 
 from trlfpi.report import Report
 from trlfpi.memory import GPMemory
-from trlfpi.gp import GP, Kernel
+from trlfpi.gp import GPTD, Kernel
 
 from scipy.optimize import brute, fmin
 
@@ -14,30 +14,39 @@ class Critic():
     def __init__(self,
                  inputSpace: int,
                  memory: int = 500,
-                 mean=None):
+                 discount: float = 0.99):
 
         self.memory = GPMemory(inputSpace, maxSize=memory)
-        self.model = GP(Kernel.RBF(1, [1.0 for i in range(inputSpace)]))
-        self.mean = mean
+        self.model = GPTD(Kernel.RBF(1, [1.0 for i in range(inputSpace)]))
+        self.H = None
+        self.discount = discount
 
     def update(self, x: np.ndarray, y: np.ndarray):
         self.memory.add(x, y)
-        if self.memory.size >= 2:
-            X, Y = self.memory.data
-            if self.mean is not None:
-                self.model.fit(X, Y, self.mean)
+        if self.memory.size >= 3:
+
+            # H
+            n = self.memory.size
+            if self.H:
+                tmp = np.zeros((n - 1, n))
+                tmp[:-1, :-1] = self.H
+                self.H = tmp
+                self.H[:-1, :-2] = 1
+                self.H[:-1, :-1] = -self.discount
+
             else:
-                self.model.fit(X, Y)
+                self.H = np.array([[1, -self.discount, 0],
+                                   [0, 1, -self.discount]])
+
+            X, Y = self.memory.data
+            self.model.fit(X, Y, self.H)
 
     def predict(self, x: np.ndarray):
         # x contains action
         if self.memory.size != 0:
             return self.model(x)
         else:
-            if self.mean:
-                return (self.mean(x), self.model.kernel(x, x))
-            else:
-                return (0, self.model.kernel(x, x))
+            return (0, self.model.kernel(x, x))
 
     def getAction(self, x):
         # x without action
@@ -66,10 +75,9 @@ if __name__ == '__main__':
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--max_episode_len", type=int, default=1000)
     parser.add_argument("--gp_size", type=int, default=1000)
-    parser.add_argument("--sigma_tol", type=float, default=0.005)
+    parser.add_argument("--sigma", type=float, default=0.005)
     parser.add_argument("--delta", type=float, default=0.01)
     parser.add_argument("--epsilonDecay", type=float, default=3.0)
-    parser.add_argument("--update_freq", type=int, default=1000)
     parser.add_argument("--plots", action='store_true')
     parser.add_argument("--plot_freq", type=int, default=25)
 
@@ -79,23 +87,21 @@ if __name__ == '__main__':
     episodes = args.episodes
     max_episode_len = args.max_episode_len
     gp_size = args.gp_size
-    sigma_tol = args.sigma_tol
+    sigma = args.sigma
     delta = args.delta
     epsilonDecay = args.epsilonDecay
-    update_freq = args.update_freq
     nRefs = args.nRefs
     systemPlots = args.plots
     plot_freq = args.plot_freq
 
     # Report
-    report = Report('dgpq')
+    report = Report('GPTD')
     report.logArgs(args.__dict__)
 
     # Setup
     env = gym.make(args.env)
 
     # Init critit
-    dCritic = Critic(1 + 2 + nRefs, memory=gp_size)
     critic = Critic(1 + 2 + nRefs, memory=gp_size)
     updates = 0
 
@@ -115,33 +121,14 @@ if __name__ == '__main__':
             if sample:
                 action = np.random.uniform(-2, 2, size=(1, 1))
             else:
-                action, _ = dCritic.getAction(state[:, :2 + nRefs])
+                action, _ = critic.getAction(state[:, :2 + nRefs])
                 if np.abs(action) >= 2:
                     action = np.random.uniform(-2, 2, size=(1, 1))
             next_state, reward, done, _ = env.step(action)
             total_reward += reward
 
             # Update critic
-            action_next, q_next = dCritic.getAction(next_state[:, :2 + nRefs])
-            qt = reward - discount * q_next
-            x = np.hstack((action, state[:, :2 + nRefs]))
-            _, sigma1 = critic(x)
-            if sigma1 > sigma_tol:
-                tmpUpdates += 1
-                critic.update(x, qt)
-            mean2, sigma2 = critic(x)
-            meanD, sigmaV = dCritic(x)
-            if sigma_tol >= sigma2 and np.abs(meanD - mean2) > delta * 2 and critic.memory.size > 1000:
-
-                updates += 1
-                dCritic.update(x, mean2)
-
-                if updates % update_freq == 0:
-                    def meanF(x):
-                        value, sigma = dCritic(x)
-                        return value
-
-                    critic = Critic(2 + 1 + nRefs, memory=gp_size, mean=meanF)
+            critic.update(state, reward)
 
             if done:
                 break
@@ -165,7 +152,7 @@ if __name__ == '__main__':
     report.generateReport()
 
     report.pickle('critic', {
-        "data": dCritic.memory,
-        "params": dCritic.model.kernel.params,
-        "sigma_n": dCritic.model.sigma_n
+        "data": critic.memory,
+        "params": critic.model.kernel.params,
+        "sigma_n": critic.model.sigma_n
     })
