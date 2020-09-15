@@ -73,5 +73,5 @@ class Kernel():
 
         params = np.hstack((alpha, lengths))
         if bounds is None:
-            bounds = [[1e-9, np.inf] for i in range(params.shape[0])]
+            bounds = [[1e-3, np.inf] for i in range(params.shape[0])]
         return cls(f, params, bounds)

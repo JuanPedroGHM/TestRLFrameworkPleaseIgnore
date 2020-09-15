@@ -9,7 +9,7 @@ class GP():
     def __init__(self, k_function: Kernel = Kernel.RBF()):
         self.kernel = k_function
         self.sigma_n = 1.0
-        self.sigma_n_bounds = [1e-9, np.inf]
+        self.sigma_n_bounds = [1e-5, np.inf]
 
     def forward(self, x):
         k_1 = self.kernel(self.X_TRAIN, x)

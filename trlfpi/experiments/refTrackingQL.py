@@ -19,19 +19,22 @@ class Critic():
         self.memory = GPMemory(inputSpace, maxSize=memory)
         self.model = GP(Kernel.RBF(1, [1.0 for i in range(inputSpace)]))
         self.mean = mean
+        self.updates = 0
 
     def update(self, x: np.ndarray, y: np.ndarray):
         self.memory.add(x, y)
+        self.updates += 1
         if self.memory.size >= 2:
             X, Y = self.memory.data
+            optimize = updates % 100 == 0
             if self.mean is not None:
-                self.model.fit(X, Y, self.mean)
+                self.model.fit(X, Y, self.mean, optimize=optimize)
             else:
-                self.model.fit(X, Y)
+                self.model.fit(X, Y, optimize=optimize)
 
     def predict(self, x: np.ndarray):
         # x contains action
-        if self.memory.size != 0:
+        if self.memory.size >= 2:
             return self.model(x)
         else:
             if self.mean:
@@ -131,7 +134,7 @@ if __name__ == '__main__':
                 critic.update(x, qt)
             mean2, sigma2 = critic(x)
             meanD, sigmaV = dCritic(x)
-            if sigma_tol >= sigma2 and np.abs(meanD - mean2) > delta * 2 and critic.memory.size > 1000:
+            if sigma_tol >= sigma2 and np.abs(meanD - mean2) > delta * 2 and critic.memory.size >= 100:
 
                 updates += 1
                 dCritic.update(x, mean2)
