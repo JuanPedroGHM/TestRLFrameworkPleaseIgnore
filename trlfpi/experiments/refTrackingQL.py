@@ -5,42 +5,44 @@ import numpy as np
 from trlfpi.report import Report
 from trlfpi.memory import GPMemory
 from trlfpi.gp import GP, Kernel
+from trlfpi.timer import Timer
 
 from scipy.optimize import brute, fmin
+
+from typing import Callable
+
+# Report
+report = Report('dgpq')
+timer = Timer()
 
 
 class Critic():
 
     def __init__(self,
                  inputSpace: int,
-                 memory: int = 500,
-                 mean=None):
+                 mean: Callable[[np.ndarray], np.ndarray] = None,
+                 memory: int = 1000,
+                 optim_freq: int = 100):
 
         self.memory = GPMemory(inputSpace, maxSize=memory)
-        self.model = GP(Kernel.RBF(1, [1.0 for i in range(inputSpace)]))
-        self.mean = mean
+        kernel = Kernel.RBF(1, [1.0 for i in range(inputSpace)])
+        self.model = GP(kernel, mean=mean, sigma_n=0.01)
+        self.optim_freq = optim_freq
         self.updates = 0
 
-    def update(self, x: np.ndarray, y: np.ndarray):
+    def update(self, x: np.ndarray, y: np.ndarray) -> float:
         self.memory.add(x, y)
         self.updates += 1
-        if self.memory.size >= 2:
+        if self.updates % self.optim_freq == 0:
             X, Y = self.memory.data
-            optimize = updates % 100 == 0
-            if self.mean is not None:
-                self.model.fit(X, Y, self.mean, optimize=optimize)
-            else:
-                self.model.fit(X, Y, optimize=optimize)
+
+            timer.start()
+            self.model.fit(X, Y, optimize=True)
+            report.log('gpUpdate', timer.stop())
 
     def predict(self, x: np.ndarray):
         # x contains action
-        if self.memory.size >= 2:
-            return self.model(x)
-        else:
-            if self.mean:
-                return (self.mean(x), self.model.kernel(x, x))
-            else:
-                return (0, self.model.kernel(x, x))
+        return self.model(x)
 
     def getAction(self, x):
         # x without action
@@ -64,44 +66,58 @@ class Critic():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="linear-with-ref-v0")
-    parser.add_argument("--nRefs", type=int, default=1)
-    parser.add_argument("--discount", type=float, default=0.99)
+
+    # Env params
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--max_episode_len", type=int, default=1000)
+    parser.add_argument("--nRefs", type=int, default=1)
+    parser.add_argument("--discount", type=float, default=0.99)
+
+    # DGPQ params
     parser.add_argument("--gp_size", type=int, default=1000)
     parser.add_argument("--sigma_tol", type=float, default=0.005)
     parser.add_argument("--delta", type=float, default=0.01)
+    parser.add_argument("--update_freq", type=int, default=100)
+    parser.add_argument("--optim_freq", type=int, default=1000)
+
+    # Exploration params
     parser.add_argument("--epsilonDecay", type=float, default=3.0)
-    parser.add_argument("--update_freq", type=int, default=1000)
+    parser.add_argument("--exploration_variance", type=float, default=0.1)
+
+    # Plot args
     parser.add_argument("--plots", action='store_true')
     parser.add_argument("--plot_freq", type=int, default=25)
 
     # SETUP ARGUMENTS
     args = parser.parse_args()
-    discount = args.discount
+
     episodes = args.episodes
     max_episode_len = args.max_episode_len
+    nRefs = args.nRefs
+    discount = args.discount
+
     gp_size = args.gp_size
     sigma_tol = args.sigma_tol
     delta = args.delta
-    epsilonDecay = args.epsilonDecay
     update_freq = args.update_freq
-    nRefs = args.nRefs
+    optim_freq = args.optim_freq
+
+    epsilonDecay = args.epsilonDecay
+    exploration_variance = args.exploration_variance
+
     systemPlots = args.plots
     plot_freq = args.plot_freq
 
-    # Report
-    report = Report('dgpq')
     report.logArgs(args.__dict__)
 
     # Setup
     env = gym.make(args.env)
 
     # Init critit
-    dCritic = Critic(1 + 2 + nRefs, memory=gp_size)
-    critic = Critic(1 + 2 + nRefs, memory=gp_size)
-    updates = 0
+    dCritic = Critic(1 + 2 + nRefs, memory=gp_size, optim_freq=optim_freq)
+    critic = Critic(1 + 2 + nRefs, memory=gp_size, optim_freq=optim_freq)
 
+    updates = 0
     for episode in range(1, episodes + 1):
         state = env.reset()
         total_reward = 0
@@ -114,13 +130,15 @@ if __name__ == '__main__':
         states = [state[0, 0]]
 
         for step in range(max_episode_len):
-            sample = (np.random.random() < epsilon)
-            if sample:
-                action = np.random.uniform(-2, 2, size=(1, 1))
-            else:
-                action, _ = dCritic.getAction(state[:, :2 + nRefs])
-                if np.abs(action) >= 2:
-                    action = np.random.uniform(-2, 2, size=(1, 1))
+
+            timer.start()
+            action, _ = dCritic.getAction(state[:, :2 + nRefs])
+            report.log('gpAction', timer.stop())
+            if np.abs(action) >= 2:
+                action = np.array([[0.0]])
+            if np.random.random() < epsilon:
+                action += np.random.normal(0, exploration_variance)
+
             next_state, reward, done, _ = env.step(action)
             total_reward += reward
 

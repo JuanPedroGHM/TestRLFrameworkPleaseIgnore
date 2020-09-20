@@ -6,31 +6,37 @@ from .kernel import Kernel
 
 class GP():
 
-    def __init__(self, k_function: Kernel = Kernel.RBF()):
+    def __init__(self, k_function: Kernel = Kernel.RBF(), mean: Callable[[np.ndarray], np.ndarray] = None, sigma_n: float = 0.1):
         self.kernel = k_function
-        self.sigma_n = 1.0
-        self.sigma_n_bounds = [1e-5, np.inf]
+        self.sigma_n = sigma_n
+        self.mean = mean
+        self.alpha = None
+        self.L = None
 
     def forward(self, x):
-        k_1 = self.kernel(self.X_TRAIN, x)
-        k_2 = self.kernel(x, x)
+        if self.alpha is not None:
 
-        mu_pred = k_1.T @ self.alpha
+            k_1 = self.kernel(self.X_TRAIN, x)
+            k_2 = self.kernel(x, x)
 
-        if self.mean:
-            mu_pred += self.mean(x)
+            mu_pred = k_1.T @ self.alpha
 
-        v = np.linalg.solve(self.L, k_1)
-        sigma_pred = k_2 - v.T @ v
+            if self.mean:
+                mu_pred += self.mean(x)
 
-        return mu_pred, sigma_pred
+            v = np.linalg.solve(self.L, k_1)
+            sigma_pred = k_2 - v.T @ v
+
+            return mu_pred, sigma_pred
+        else:
+            if self.mean:
+                return self.mean(x), self.kernel(x, x)
+            else:
+                return 0, self.kernel(x, x)
 
     def logLikelihood(self, params: List[float]):
-        sigma_n = params[0]
-        kernelParams = params[1:]
-
-        K = self.kernel(self.X_TRAIN, self.X_TRAIN, customParams=kernelParams)
-        L = np.linalg.cholesky(K + (sigma_n ** 2) * np.identity(K.shape[0]))
+        K = self.kernel(self.X_TRAIN, self.X_TRAIN, customParams=params)
+        L = np.linalg.cholesky(K + (self.sigma_n ** 2) * np.identity(K.shape[0]))
         if self.mean:
             alpha = np.linalg.solve(L.T, np.linalg.solve(L, (self.Y_TRAIN - self.mean(self.X_TRAIN))))
         else:
@@ -40,18 +46,16 @@ class GP():
 
         return result.item()
 
-    def fit(self, X, Y, mean: Callable[[np.ndarray], np.ndarray] = None, optimize=True):
+    def fit(self, X, Y, optimize=True):
         self.X_TRAIN = X
         self.Y_TRAIN = Y
-        self.mean = mean
 
         if optimize:
-            params = np.hstack((self.sigma_n, self.kernel.params))
-            bounds = [self.sigma_n_bounds] + self.kernel.bounds
+            params = np.hstack(self.kernel.params)
+            bounds = self.kernel.bounds
             res = optim.minimize(self.logLikelihood, params, bounds=bounds)
 
-            self.sigma_n = res.x[0]
-            self.kernel.params = res.x[1:]
+            self.kernel.params = res.x
 
         self.L = np.linalg.cholesky(self.kernel(X, X) + (self.sigma_n ** 2) * np.identity(X.shape[0]))
         if self.mean:
