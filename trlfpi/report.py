@@ -70,7 +70,7 @@ class Report():
     def savePlot(self, plotName: str, variableNames: List[str], Y: np.ndarray, X=None):
         plt.figure()
         for i in range(Y.shape[1]):
-            if X:
+            if X is not None:
                 plt.plot(X, Y[:, i], label=variableNames[i])
             else:
                 plt.plot(Y[:, i], label=variableNames[i])

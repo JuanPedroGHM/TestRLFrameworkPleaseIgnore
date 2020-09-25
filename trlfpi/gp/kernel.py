@@ -1,6 +1,7 @@
 import numpy as np
-from scipy.spatial.distance import cdist
 from typing import Callable, List
+
+from trlfpi.gp.kernel_util import rbf_f
 
 
 class Kernel():
@@ -59,21 +60,7 @@ class Kernel():
     @classmethod
     def RBF(cls, theta=1.0, lengths=1.0, bounds=None):
 
-        def f(x0, x1, params):
-            theta = params[0]
-            length = params[1:]
-
-            if length.shape[0] != 1:
-                if x0.shape[1] != x1.shape[1] != length.shape[0]:
-                    raise ValueError("Lenght is invalid")
-
-            l2 = np.power(length, 2)
-
-            dist = cdist(x0 / l2, x1 / l2, 'sqeuclidean')
-            K = theta**2 * np.exp(-.5 * dist)
-            return K
-
         params = np.hstack((theta, lengths))
         if bounds is None:
-            bounds = [[1e-6, np.inf] for i in range(params.shape[0])]
-        return cls(f, params, bounds)
+            bounds = [[0, np.inf] for i in range(params.shape[0])]
+        return cls(rbf_f, params, bounds)
