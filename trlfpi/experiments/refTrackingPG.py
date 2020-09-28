@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from trlfpi.approx import NNActor
+from trlfpi.nn import NNActor
 from trlfpi.report import Report
 from trlfpi.memory import GymMemory
 
@@ -12,7 +12,7 @@ from trlfpi.memory import GymMemory
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="linear-with-ref-v0")
-    parser.add_argument("--nRefs", type=int, default=3)
+    parser.add_argument("--nRefs", type=int, default=1)
     parser.add_argument("--a_lr", type=float, default=1e-5)
     parser.add_argument("--discount", type=float, default=0.99)
     parser.add_argument("--episodes", type=int, default=1000)
@@ -57,33 +57,6 @@ if __name__ == '__main__':
 
     replayBuff = GymMemory(env.observation_space, env.action_space, maxSize=buffer_size)
 
-    def actWithRef(actorNet, x: np.ndarray, sample=False):
-        # x : B x X
-        if nRefs == 0:
-            currentState = x[:, :2]
-            actorInput = torch.tensor(currentState, dtype=torch.float32, device=device)
-            action, _ = actorNet.act(actorInput, numpy=True, sample=sample)
-            return action, 0
-
-        else:
-            currentState = x[:, :2]
-            refs = x[:, 2:]
-
-            # B x T x D
-            state_p = np.zeros((nRefs, 2))
-            actions = np.zeros((nRefs, 1))
-            for i in range(nRefs):
-                actorInput = torch.as_tensor(
-                    np.hstack((currentState, refs[:, i:nRefs + i])),
-                    dtype=torch.float32
-                ).to(device)
-                actions[i, :], _ = actorNet.act(actorInput, numpy=True, sample=sample)
-                currentState = env.predict(currentState.T, actions[[i], :]).T
-                state_p[i, :] = currentState
-
-            deltas = state_p[:, [0]].T - refs[:, :nRefs]
-            return actions[[0], :], deltas
-
     def updateActor():
 
         actor_loss = 0
@@ -94,42 +67,12 @@ if __name__ == '__main__':
             # Optimize actor
             actorOptim.zero_grad()
 
-            if nRefs == 0:
-                actorInput = states[:, :2]
-                actions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
+            actorInput = states[:, :2 + nRefs]
+            actions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
 
-                actor_loss = (-log_probs * (rewards - rewards.mean())).mean()
-                actor_loss.backward()
-                actorOptim.step()
-
-            else:
-                # B x D
-                currentStates = states[:, :2]
-                refs = states[:, 2:]
-
-                # B x T x D
-                state_p = torch.zeros((batch_size, nRefs, 2)).to(device)
-                next_actions = torch.zeros((batch_size, nRefs)).to(device)
-                log_probs = torch.zeros((batch_size, nRefs)).to(device)
-                discountVector = torch.tensor([[discount**i for i in range(1, nRefs + 1)]]).to(device).T
-                for i in range(nRefs):
-                    actorInput = torch.cat((currentStates, refs[:, i:nRefs + i]), 1)
-
-                    tmpAct, tmpLP = actor.act(actorInput, sample=False, prevActions=actions)
-                    next_actions[:, [i]] = tmpAct
-                    log_probs[:, [i]] = tmpLP
-
-                    currentState = torch.as_tensor(env.predict(currentStates.T.cpu().data.numpy(),
-                                                               actions[:, [0]].T.cpu().data.numpy()))
-                    currentState = currentState.T
-                    state_p[:, i, :] = currentState
-
-                deltas = state_p[:, :, 0] - refs[:, :nRefs]
-                G = rewards - torch.pow(deltas, 2) @ discountVector
-
-                actor_loss = (-log_probs[:, [0]] * (G - rewards.mean())).mean()
-                actor_loss.backward()
-                actorOptim.step()
+            actor_loss = (-log_probs * (rewards - rewards.mean())).mean()
+            actor_loss.backward()
+            actorOptim.step()
 
         return actor_loss
 
@@ -144,7 +87,11 @@ if __name__ == '__main__':
 
         for step in range(max_episode_len):
             sample = (np.random.random() < epsilon)
-            action, deltas = actWithRef(actorTarget, state, sample=sample)
+
+            # Take action
+            actorInput = torch.tensor(state[:, :2 + nRefs], dtype=torch.float32, device=device)
+            action, _ = actorTarget.act(actorInput, numpy=True, sample=sample)
+
             next_state, reward, done, _ = env.step(action)
             total_reward += reward
 

@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.optimize as optim
 from scipy.linalg import cholesky, cho_solve, LinAlgError
-from typing import List, Callable
+from typing import Callable
 from .kernel import Kernel
 from trlfpi.timer import Timer
 from multiprocessing import Pool
@@ -48,7 +48,6 @@ class GP():
         if self.alpha is not None:
 
             k_1 = self.kernel(self.X_TRAIN, x)
-            k_2 = self.kernel(x, x)
 
             mu_pred = k_1.T @ self.alpha
 
@@ -87,7 +86,7 @@ class GP():
 
     def brute(self):
 
-        lengthBounds = np.max(self.X_TRAIN, axis=0) - np.min(self.X_TRAIN, axis=0)
+        lengthBounds = (np.max(self.X_TRAIN, axis=0) - np.min(self.X_TRAIN, axis=0)) * 10
         ranges = [(0, 250)]
         ranges.extend([(0, bound) for bound in lengthBounds])
         stepSizes = np.array([(range[1] - range[0]) / self.bGridSize for range in ranges])
@@ -116,6 +115,7 @@ class GP():
                 bounds = self.kernel.bounds
             else:
                 bounds = [(low, high) for low, high in zip(*bounds)]
+                self.kernel.bounds = bounds
 
             res = optim.minimize(self.logLikelihood, params, bounds=bounds)
             self.kernel.params = res.x

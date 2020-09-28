@@ -3,88 +3,12 @@ import gym
 import numpy as np
 
 from trlfpi.report import Report
-from trlfpi.memory import GPMemory
-from trlfpi.gp import GP, Kernel
+from trlfpi.gp import Critic
 from trlfpi.timer import Timer
-
-from scipy.optimize import minimize
-
-from typing import Callable
 
 # Report
 report = Report('dgpq')
 timer = Timer()
-
-
-class Critic():
-
-    def __init__(self,
-                 inputSpace: int,
-                 mean: Callable[[np.ndarray], np.ndarray] = None,
-                 memory: int = 1000,
-                 optim_freq: int = 100,
-                 bruteFactor: int = 5,
-                 bGridSize: int = 5,
-                 bPoolSize: int = 8):
-
-        self.memory = GPMemory(inputSpace, maxSize=memory)
-        kernel = Kernel.RBF(1, [1.0 for i in range(inputSpace)])
-        self.model = GP(kernel,
-                        meanF=mean,
-                        sigma_n=0.1,
-                        bGridSize=bGridSize,
-                        bPoolSize=bPoolSize)
-        self.optim_freq = optim_freq
-        self.updates = 0
-        self.bruteFactor = bruteFactor
-        self.bGridSize = bGridSize
-        self.bPoolSize = bPoolSize
-
-    def update(self, x: np.ndarray, y: np.ndarray) -> float:
-        self.memory.add(x, y)
-        self.updates += 1
-        if self.updates % self.optim_freq == 0:
-            X, Y = self.memory.data
-
-            if self.updates % (self.optim_freq * self.bruteFactor):
-                timer.start()
-                self.model.fit(X, Y, fineTune=True, brute=True)
-                report.log('gpBrute', timer.stop())
-
-            else:
-                timer.start()
-                self.model.fit(X, Y, fineTune=True)
-                report.log('gpUpdate', timer.stop())
-
-    def predict(self, x: np.ndarray):
-        # x contains action
-        return self.model(x)
-
-    def getAction(self, x, plotName: str = None):
-        # x without action
-        # return action, value at action
-        aRange = np.arange(-2, 2, 0.25).reshape(-1, 1)
-        grid = np.hstack((aRange, np.repeat(x, aRange.shape[0], axis=0)))
-        qs, sigmas = self.model(grid)
-
-        bestA = grid[np.argmax(qs), 0]
-        if plotName:
-            print(qs)
-            report.savePlot(f"a_q_{plotName}", ["Q"], qs, X=aRange)
-
-        bounds = [(bestA - 0.25, bestA + 0.25)]
-
-        def f(a):
-            q_input = np.hstack((a.reshape(1, 1), x))
-            q = self.model.mean(q_input).item()
-            return -q
-
-        res = minimize(f, np.array([bestA]), bounds=bounds)
-        bestA = np.array(res.x).reshape(1, 1)
-        return bestA, res.fun
-
-    def __call__(self, x: np.ndarray) -> np.ndarray:
-        return self.predict(x)
 
 
 if __name__ == '__main__':
@@ -169,6 +93,7 @@ if __name__ == '__main__':
 
         states = []
         actions = []
+        qs = []
 
         for step in range(max_episode_len):
 
@@ -186,6 +111,7 @@ if __name__ == '__main__':
             # Update critic
             action_next, q_next = dCritic.getAction(next_state[:, :2 + nRefs])
             qt = reward + discount * q_next
+            qs.append(qt)
             x = np.hstack((action, state[:, :2 + nRefs]))
 
             mean1, sigma1 = critic(x)
@@ -226,6 +152,8 @@ if __name__ == '__main__':
             report.savePlot(f"episode_{episode}_plot",
                             ['State', 'Ref', 'Actions'],
                             plotData)
+            report.savePlot(f"episode_{episode}_q_plot",
+                            ['Q'], np.array(qs).reshape(-1, 1))
 
         print(f"Episode {episode}: Reward = {total_reward}, Epsilon = {epsilon}, Updates = {updates}, TmpUpdates = {tmpUpdates}")
         report.log('epsilon', epsilon, episode)
