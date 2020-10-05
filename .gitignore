@@ -127,3 +127,4 @@ results/
 
 # ENV
 .envrc
+.vim

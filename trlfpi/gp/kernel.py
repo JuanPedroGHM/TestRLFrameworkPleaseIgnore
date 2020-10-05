@@ -1,14 +1,17 @@
 import numpy as np
-from typing import Callable, List
+import torch
+from typing import Callable, List, Union
 
-from trlfpi.gp.kernel_util import rbf_f
+from trlfpi.gp.kernel_util import rbf_f, rbf_f_t
+
+Tensor = Union[np.ndarray, torch.Tensor]
 
 
 class Kernel():
 
-    def __init__(self, f: Callable = None, params: np.ndarray = None, bounds: List[List] = None):
-        self.kernelFunctions: List[Callable] = []
-        self.paramsArray: List[np.ndarray] = []
+    def __init__(self, f: Callable[[Tensor], Tensor] = None, params: Tensor = None, bounds: List[List] = None):
+        self.kernelFunctions: List[Callable[[Tensor], Tensor]] = []
+        self.paramsArray: List[Tensor] = []
         self.bounds: List[List] = []
 
         if f is not None and params is not None and bounds is not None:
@@ -16,12 +19,16 @@ class Kernel():
             self.paramsArray.append(params)
             self.bounds.extend(bounds)
 
-    def __call__(self, x1: np.ndarray, x2: np.ndarray = None, customParams: np.ndarray = None) -> np.ndarray:
+    def __call__(self, x1: Tensor, x2: Tensor = None, customParams: Tensor = None) -> Tensor:
 
         if x2 is None:
             x2 = x1
 
-        result = np.zeros((x1.shape[0], x2.shape[0]))
+        if type(x1) == torch.Tensor:
+            result = torch.zeros((x1.shape[0], x2.shape[0])).to(x1.device)
+
+        else:
+            result = np.zeros((x1.shape[0], x2.shape[0]))
 
         if customParams is not None:
 
@@ -47,20 +54,26 @@ class Kernel():
         return self
 
     @property
-    def params(self) -> np.ndarray:
+    def params(self) -> Tensor:
         return np.hstack(self.paramsArray)
 
     @params.setter
-    def params(self, newParams: np.ndarray):
+    def params(self, newParams: Tensor):
         newParamsIndex = 0
         for index, params in enumerate(self.paramsArray):
             self.paramsArray[index] = newParams[newParamsIndex: newParamsIndex + len(params)]
             newParamsIndex += len(params)
 
     @classmethod
-    def RBF(cls, theta=1.0, lengths=1.0, bounds=None):
+    def RBF(cls, theta: float, lengths: List, bounds=None, gpu=False):
 
-        params = np.hstack((theta, lengths))
         if bounds is None:
-            bounds = [[0, np.inf] for i in range(params.shape[0])]
-        return cls(rbf_f, params, bounds)
+            bounds = [[0, np.inf] for i in range(1 + len(lengths))]
+
+        if gpu:
+            params = torch.tensor([theta] + lengths)
+            return cls(rbf_f_t, params, bounds)
+        else:
+            params = np.hstack((theta, lengths))
+            return cls(rbf_f, params, bounds)
+

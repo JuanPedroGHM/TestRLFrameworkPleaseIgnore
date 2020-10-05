@@ -2,7 +2,7 @@ import numpy as np
 
 from scipy.optimize import minimize
 
-from typing import Callable
+from typing import Any
 
 from .gp import GP
 from .kernel import Kernel
@@ -13,7 +13,7 @@ class Critic():
 
     def __init__(self,
                  inputSpace: int,
-                 mean: Callable[[np.ndarray], np.ndarray] = None,
+                 mean: Any = None,
                  memory: int = 1000,
                  optim_freq: int = 100,
                  bruteFactor: int = 5,
@@ -21,7 +21,7 @@ class Critic():
                  bPoolSize: int = 8):
 
         self.memory = GPMemory(inputSpace, maxSize=memory)
-        kernel = Kernel.RBF(1, [1.0 for i in range(inputSpace)])
+        kernel = Kernel.RBF(1.0, np.array([1.0 for i in range(inputSpace)]))
         self.model = GP(kernel,
                         meanF=mean,
                         sigma_n=0.1,
@@ -39,7 +39,7 @@ class Critic():
         if self.updates % self.optim_freq == 0:
             X, Y = self.memory.data
 
-            if self.updates % (self.optim_freq * self.bruteFactor):
+            if self.updates % (self.optim_freq * self.bruteFactor) or self.updates == self.optim_freq:
                 self.model.fit(X, Y, fineTune=True, brute=True)
 
             else:
@@ -66,7 +66,7 @@ class Critic():
 
         res = minimize(f, np.array([bestA]), bounds=bounds)
         bestA = np.array(res.x).reshape(1, 1)
-        return bestA, res.fun
+        return bestA, res.fun, (aRange, qs)
 
     def __call__(self, x: np.ndarray) -> np.ndarray:
         return self.predict(x)

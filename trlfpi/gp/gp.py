@@ -1,7 +1,8 @@
 import numpy as np
+
 import scipy.optimize as optim
 from scipy.linalg import cholesky, cho_solve, LinAlgError
-from typing import Callable
+from typing import Callable, Any
 from .kernel import Kernel
 from trlfpi.timer import Timer
 from multiprocessing import Pool
@@ -10,8 +11,8 @@ from multiprocessing import Pool
 class GP():
 
     def __init__(self,
-                 k_function: Kernel = Kernel.RBF(),
-                 meanF: Callable[[np.ndarray], np.ndarray] = None,
+                 k_function: Kernel = Kernel.RBF(1.0, [1.0]),
+                 meanF: Any = None,
                  sigma_n: float = 0.1,
                  bGridSize: int = 5,
                  bPoolSize: int = 8):
@@ -23,7 +24,7 @@ class GP():
         self.bGridSize = bGridSize
         self.bPoolSize = bPoolSize
 
-    def forward(self, x):
+    def forward(self, x: np.ndarray):
         if self.alpha is not None:
 
             k_1 = self.kernel(self.X_TRAIN, x)
@@ -31,18 +32,14 @@ class GP():
 
             mu_pred = k_1.T @ self.alpha
 
-            if self.meanF:
-                mu_pred += self.meanF(x)
+            mu_pred += self.priorMean(x)
 
-            v = np.linalg.solve(self.L, k_1)
+            v = cho_solve((self.L, True), k_1)
             sigma_pred = k_2 - v.T @ v
 
             return mu_pred, np.diag(sigma_pred).reshape(-1, 1)
         else:
-            if self.meanF:
-                return self.meanF(x), self.kernel(x, x)
-            else:
-                return np.zeros((x.shape[0], 1)), self.kernel(x, x)
+            return self.priorMean(x), self.kernel(x, x)
 
     def mean(self, x):
         if self.alpha is not None:
@@ -50,16 +47,21 @@ class GP():
             k_1 = self.kernel(self.X_TRAIN, x)
 
             mu_pred = k_1.T @ self.alpha
-
-            if self.meanF:
-                mu_pred += self.meanF(x)
+            mu_pred += self.priorMean(x)
 
             return mu_pred
         else:
-            if self.meanF:
-                return self.meanF(x)
-            else:
-                return np.zeros((x.shape[0], 1))
+            return self.priorMean(x)
+
+    def priorMean(self, x: np.ndarray):
+        if type(self.meanF) is float:
+            pMean = np.ones((x.shape[0], 1)) * self.meanF
+        elif type(self.meanF) is Callable:
+            pMean = self.meanF(x)
+        else:
+            pMean = np.zeros((x.shape[0], 1))
+
+        return pMean
 
     def L_alpha(self, K, X, Y):
         try:
@@ -67,10 +69,7 @@ class GP():
         except (LinAlgError, ValueError):
             raise LinAlgError
 
-        if self.meanF:
-            alpha = cho_solve((L, True), Y - self.meanF(X))
-        else:
-            alpha = cho_solve((L, True), Y)
+        alpha = cho_solve((L, True), Y - self.priorMean(X))
         return L, alpha
 
     def logLikelihood(self, params: np.ndarray):
@@ -133,56 +132,56 @@ class GP():
 
 if __name__ == "__main__":
 
-    # 1D Test1
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
 
     timer = Timer()
 
-    # DATAPOINTS = 1000
+    # 1D Test1
+    # DATAPOINTS = 100
     # f = lambda x: (1 / x) * np.sin(5 * 2 * np.pi * x)
 
     # X_DATA = np.random.uniform(-1.0, 1.0, DATAPOINTS).reshape((DATAPOINTS, 1))
     # Y_DATA = f(X_DATA) + np.random.normal(0, 0.1, DATAPOINTS).reshape((DATAPOINTS, 1))
 
-    # kernel = Kernel.RBF(1, 0.1)
-    # gpModel = GP(kernel, sigma_n=1)
+    # kernel = Kernel.RBF(1.0, np.array([1.0]))
+    # gpModel = GP(kernel, sigma_n=1, meanF=-2.0)
     # timer.start()
-    # gpModel.fit(X_DATA, Y_DATA, optimize=True, brute=True)
+    # gpModel.fit(X_DATA, Y_DATA, fineTune=True, brute=True)
     # print(f"1D fit time : {timer.stop()}")
 
-    # x = np.linspace(-1, 1, 1000).reshape((1000, 1))
+    # x = np.linspace(-1, 1, 100).reshape((100, 1))
     # y_pred, sigma_pred = gpModel(x)
     # y_real = f(x)
 
-    # plt.fill(np.concatenate([x, x[::-1]]),
-    #          np.concatenate([y_pred - 1.96 * sigma_pred,
-    #                          (y_pred + 1.96 * sigma_pred)[::-1]]),
-    #          alpha=.1, fc='c', ec=None)
+    # # plt.fill(np.concatenate([x, x[::-1]]),
+    # #          np.concatenate([y_pred - 1.96 * sigma_pred,
+    # #                          (y_pred + 1.96 * sigma_pred)[::-1]]),
+    # #          alpha=.1, fc='c', ec=None)
     # plt.scatter(X_DATA, Y_DATA, marker='*', c='r')
     # plt.plot(x, y_pred, 'b-', label="GP")
     # plt.plot(x, y_real, 'r--', label="f(x)")
     # plt.legend()
     # plt.show()
 
-    # 2D Test
-    DATAPOINTS = 2000
+    # # 2D Test
+    DATAPOINTS = 1000
     TEST = 50
     f = lambda x: (x[:, [1]] - x[:, [0]]) * 20 * np.sin(2 * np.pi * x[:, [0]]) + 10
     X_DATA = np.random.uniform(-1, 1, DATAPOINTS * 2).reshape((DATAPOINTS, 2))
-    Y_DATA = f(X_DATA) + np.random.normal(0, 0.0001, DATAPOINTS).reshape((DATAPOINTS, 1))
+    Y_DATA = f(X_DATA)
 
     x = np.linspace(-1.0, 1.0, TEST).reshape((TEST,))
     x1, x2 = np.meshgrid(x, x)
     xx = np.stack((x1, x2), axis=2).reshape((TEST * TEST, 2))
     y = f(xx)
 
-    kernel = Kernel.RBF(1, [1.0, 1.0])
-    gpModel = GP(kernel, sigma_n=1.0)
+    kernel = Kernel.RBF(1.0, [1.0, 1.0])
+    gpModel = GP(kernel, sigma_n=1.0, meanF=-2.0)
     timer.start()
     gpModel.fit(X_DATA, Y_DATA, fineTune=True, brute=True)
-    print(f"2D fit time : {timer.stop()}")
     y_pred, sigma_pred = gpModel(xx)
+    print(f"2D fit time : {timer.stop()}")
 
     fig = plt.figure()
     ax = fig.add_subplot(211, projection='3d')

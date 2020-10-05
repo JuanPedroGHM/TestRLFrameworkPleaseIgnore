@@ -1,1 +1,1 @@
-docker run -it --rm --gpus 'device=0' trlfpi
+docker run -it --rm --gpus $1 trlfpi
