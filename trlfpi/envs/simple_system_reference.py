@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from numpy import concatenate as cat
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
@@ -12,12 +13,21 @@ class LinearSystem():
         self.A = np.array(config["A"], dtype=float)
         self.B = np.array(config["B"], dtype=float)
 
+        self.A_t = torch.tensor(self.A, dtype=torch.float32)
+        self.B_t = torch.tensor(self.B, dtype=torch.float32)
+
     def apply(self, u):
         self.x = self.A @ self.x + self.B @ u
         return self.x
 
-    def predict(self, x, u):
-        return self.A @ x + self.B @ u
+    def predict(self, x, u, gpu=False):
+        if gpu:
+            return self.predict_t(x, u)
+        else:
+            return self.A @ x + self.B @ u
+
+    def predict_t(self, x: torch.Tensor, u: torch.Tensor):
+        return self.A_t @ x + self.B_t @ u
 
 
 class Reference():

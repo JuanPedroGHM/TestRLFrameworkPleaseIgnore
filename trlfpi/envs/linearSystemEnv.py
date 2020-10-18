@@ -14,8 +14,9 @@ class LinearSystemEnv(gym.Env):
         self.system = LinearSystem(configSystem)
         self.reference = Reference(configReference)
         self.h = configReference['h']
-        self.observation_space = Box(low=-np.inf, high=np.inf, shape=(7,))
+        self.observation_space = Box(low=-np.inf, high=np.inf, shape=(2,))
         self.action_space = Box(low=-np.inf, high=np.inf, shape=(1,))
+        self.reference_space = Box(low=-np.inf, high=np.inf, shape=(6,))
         self.setup()
 
     def setup(self):
@@ -26,21 +27,21 @@ class LinearSystemEnv(gym.Env):
 
         self.done = False
         ref = self.reference.getNext()
-        return np.hstack((self.system.x.T, ref[1:, :].T))
+        return self.system.x.T, ref.T
 
     def step(self, action):
         ref = self.reference.getNext()
         systemOut = self.system.apply(action)
 
         reward = -1 * (ref[0, 0] - systemOut[0, 0])**2
-        observation = np.hstack((self.system.x.T, ref[1:, :].T))
+        observation = self.system.x.T
 
         self.done = self.reference.counter == 1
 
-        return observation, reward, self.done, None
+        return observation, reward, self.done, ref.T
 
-    def predict(self, x, a):
-        return self.system.predict(x, a)
+    def predict(self, x, a, gpu=False):
+        return self.system.predict(x, a, gpu=gpu)
 
     def reset(self):
         return self.setup()
