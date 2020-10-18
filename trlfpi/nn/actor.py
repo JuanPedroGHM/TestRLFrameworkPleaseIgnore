@@ -15,23 +15,26 @@ class NNActor(nn.Module):
                  actionSpace: int,
                  hidden: List[int],
                  activation: nn.Module = nn.ReLU,
-                 outputActivation: nn.Module = nn.Identity):
+                 outputActivation: nn.Module = nn.Identity,
+                 exploration_sigma: float = 0.25):
 
         super(NNActor, self).__init__()
 
         layers = [inputSpace] + hidden + [actionSpace]
 
-        self.mu = mlp(layers, activation=activation, outputActivation=outputActivation)
-        self.sigma = nn.Parameter(0.0 * torch.ones(actionSpace), requires_grad=True)
+        self.mu = mlp(layers,
+                      activation=activation,
+                      outputActivation=outputActivation,
+                      batchNorm=True,
+                      dropout=True)
+        self.sigma = nn.Parameter(exploration_sigma * torch.ones(actionSpace))
 
     def forward(self, obs):
         mu = self.mu(obs)
-        std = torch.exp(self.sigma)
-
-        return mu, std
+        return mu, self.sigma
 
     def log_prob(self, mu: torch.Tensor, std: torch.Tensor, actions: torch.Tensor):
-        alpha = -torch.pow((actions - mu) / (2 * std), 2)
+        alpha = -0.5 * torch.pow((actions - mu) / (std), 2)
         return torch.log((1 / (np.sqrt(2 * np.pi) * std)) * torch.exp(alpha))
 
     def act(self, obs, sample: bool = False, numpy=False, prevActions=None):

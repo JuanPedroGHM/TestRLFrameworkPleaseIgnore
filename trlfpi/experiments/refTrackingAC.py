@@ -4,76 +4,79 @@ import numpy as np
 import torch
 from torch import nn
 
-from trlfpi.approx import NNActor
+from trlfpi.nn.actor import NNActor
+from trlfpi.nn.critic import NNCritic
+from trlfpi.nn.activation import InvertedRELU
 from trlfpi.report import Report
-from trlfpi.memory import GymMemory, GPMemory
-from trlfpi.gp import GP, Kernel
+from trlfpi.timer import Timer
+from trlfpi.memory import GymMemory
 
+torch.set_default_dtype(torch.double)
 
-class Critic():
-
-    def __init__(self,
-                 inputSpace: int,
-                 memory: int = 500):
-
-        self.memory = GPMemory(inputSpace, maxSize=memory)
-        self.model = GP(Kernel.RBF() + Kernel.Noise())
-
-    def update(self, x: np.ndarray, y: np.ndarray):
-        self.memory.add(x, y)
-        if self.memory.size >= 2:
-            X, Y = self.memory.data
-            self.model.fit(X, Y)
-
-    def predict(self, x: np.ndarray):
-        if self.memory.size != 0:
-            return self.model(x)
-        else:
-            return (0, 0)
-
-    def __call__(self, x: np.ndarray) -> np.ndarray:
-        return self.predict(x)
+# Report
+report = Report('refTrackingAC')
+timer = Timer()
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="linear-with-ref-v0")
-    parser.add_argument("--nRefs", type=int, default=3)
-    parser.add_argument("--a_lr", type=float, default=1e-5)
-    parser.add_argument("--discount", type=float, default=0.99)
-    parser.add_argument("--episodes", type=int, default=1000)
+    parser.add_argument("--cpus", type=int, default=1)
+
+    # Env params
+    parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--max_episode_len", type=int, default=1000)
-    parser.add_argument("--buffer_size", type=int, default=1000)
-    parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--update_freq", type=int, default=25)
+    parser.add_argument("--nRefs", type=int, default=1)
+    parser.add_argument("--discount", type=float, default=0.7)
+
+    # NN params
+    parser.add_argument("--c_lr", type=float, default=1e-3)
+    parser.add_argument("--a_lr", type=float, default=1e-5)
+    parser.add_argument("--batch_size", type=int, default=512)
+    parser.add_argument("--buffer_size", type=int, default=5000)
+    parser.add_argument("--a_update_freq", type=int, default=10)
+    parser.add_argument("--c_update_freq", type=int, default=10)
+
+    # Exploration params
     parser.add_argument("--epsilonDecay", type=float, default=3.0)
+    parser.add_argument("--exploration_std", type=float, default=0.5)
+
+    # Plot args
     parser.add_argument("--plots", action='store_true')
+    parser.add_argument("--plot_freq", type=int, default=10)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
 
     # SETUP ARGUMENTS
     args = parser.parse_args()
-    discount = args.discount
-    a_lr = args.a_lr
+
+    cpus = args.cpus
+
     episodes = args.episodes
     max_episode_len = args.max_episode_len
+    nRefs = args.nRefs
+    discount = args.discount
+
+    a_lr = args.a_lr
+    c_lr = args.c_lr
     batch_size = args.batch_size
     buffer_size = args.buffer_size
-    update_freq = args.update_freq
-    epsilonDecay = args.epsilonDecay
-    nRefs = args.nRefs
-    systemPlots = args.plots
+    a_update_freq = args.a_update_freq
+    c_update_freq = args.c_update_freq
 
-    # Report
-    report = Report('pg_ref_ac_deltas')
+    epsilonDecay = args.epsilonDecay
+    exploration_std = args.exploration_std
+
+    systemPlots = args.plots
+    plot_freq = args.plot_freq
+
     report.logArgs(args.__dict__)
 
     # Setup
     env = gym.make(args.env)
 
-    # Smaller net
-    # Init policy network
+    # Init policy networks
     actor = NNActor(2 + nRefs, 1, [64], outputActivation=nn.Tanh).to(device)
     actorTarget = NNActor(2 + nRefs, 1, [64], outputActivation=nn.Tanh).to(device)
     actorTarget.load_state_dict(actor.state_dict())
@@ -81,98 +84,69 @@ if __name__ == '__main__':
 
     actorOptim = torch.optim.Adam(actor.parameters(), lr=a_lr)
 
-    replayBuff = GymMemory(env.observation_space, env.action_space, maxSize=buffer_size)
+    # Init critit [State + Ref + Action]
 
-    # Critic
-    critic = Critic(1 + 2 + nRefs, 1000 ** nRefs)
+    critic = NNCritic(2 + nRefs + 1, [256, 32], outputActivation=InvertedRELU)
+    criticTarget = NNCritic(2 + nRefs + 1, [256, 32], outputActivation=InvertedRELU)
+    criticTarget.load_state_dict(critic.state_dict())
+    criticTarget.eval()
 
-    def actWithRef(actorNet, x: np.ndarray, sample=False):
-        # x : B x X
-        if nRefs == 0:
-            currentState = x[:, :2]
-            actorInput = torch.tensor(currentState, dtype=torch.float32, device=device)
-            action, _ = actorNet.act(actorInput, numpy=True, sample=sample)
-            return action, 0
+    criticOptim = torch.optim.Adam(critic.parameters(), lr=c_lr)
+    criticLossF = torch.nn.MSELoss()
 
-        else:
-            currentState = x[:, :2]
-            refs = x[:, 2:]
+    # Replay buffer
+    replayBuff = GymMemory(env.observation_space,
+                           env.action_space,
+                           reference_space=env.reference_space,
+                           maxSize=buffer_size)
 
-            # B x T x D
-            state_p = np.zeros((nRefs, 2))
-            actions = np.zeros((nRefs, 1))
-            for i in range(nRefs):
-                actorInput = torch.as_tensor(
-                    np.hstack((currentState, refs[:, i:nRefs + i])),
-                    dtype=torch.float32
-                ).to(device)
-                actions[i, :], _ = actorNet.act(actorInput, numpy=True, sample=sample)
-                currentState = env.predict(currentState.T, actions[[i], :]).T
-                state_p[i, :] = currentState
+    def update():
 
-            deltas = state_p[:, [0]].T - refs[:, :nRefs]
-            return actions[[0], :], deltas
-
-    def updateActor():
-
-        actor_loss = 0
+        total_critic_loss = 0
+        total_actor_loss = 0
         if replayBuff.size >= batch_size:
 
-            states, actions, rewards, next_states, dones = tuple(map(lambda x: torch.as_tensor(x, dtype=torch.float32).to(device), replayBuff.get(batchSize=batch_size)))
+            # Update critic
+            for _ in range(20):
+                criticOptim.zero_grad()
+                states, actions, rewards, next_states, dones, refs = replayBuff.get(batchSize=batch_size)
+
+                cInput = torch.cat((actions, states, refs[:, :nRefs]), axis=1)
+                q = critic(cInput)
+
+                with torch.no_grad():
+                    next_actions, _ = actorTarget(torch.cat([states, refs[:, :nRefs]], axis=1))
+                    next_q = (1 - dones) * criticTarget(torch.cat([next_actions, next_states, refs[:, 1:nRefs + 1]], axis=1))
+
+                loss = criticLossF(q, rewards + discount * next_q)
+                loss.backward()
+                criticOptim.step()
+
+                total_critic_loss += loss
+
+            # Get q values
+            states, actions, rewards, next_states, dones, refs = replayBuff.get(batchSize=batch_size)
+            qs = critic(cInput)
 
             # Optimize actor
             actorOptim.zero_grad()
 
-            if nRefs == 0:
-                actorInput = states[:, :2]
-                actions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
+            actorInput = torch.cat([states, refs[:, :nRefs]], axis=1)
+            actions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
 
-                actor_loss = (-log_probs * (rewards - rewards.mean())).mean()
-                actor_loss.backward()
-                actorOptim.step()
+            actor_loss = (-log_probs * qs).mean()
+            actor_loss.backward()
+            actorOptim.step()
 
-            else:
-                # B x D
-                currentStates = states[:, :2]
-                refs = states[:, 2:]
+            total_actor_loss += actor_loss
 
-                # B x T x D
-                state_p = torch.zeros((batch_size, nRefs, 2)).to(device)
-                next_actions = torch.zeros((batch_size, nRefs)).to(device)
-                log_probs = torch.zeros((batch_size, nRefs)).to(device)
-                for i in range(nRefs):
-                    actorInput = torch.cat((currentStates, refs[:, i:nRefs + i]), 1)
-
-                    tmpAct, tmpLP = actor.act(actorInput, sample=False, prevActions=actions)
-                    next_actions[:, [i]] = tmpAct
-                    log_probs[:, [i]] = tmpLP
-
-                    currentState = torch.as_tensor(env.predict(currentStates.T.cpu().data.numpy(),
-                                                               actions[:, [0]].T.cpu().data.numpy()))
-                    currentState = currentState.T
-                    state_p[:, i, :] = currentState
-
-                deltas = state_p[:, :, 0] - refs[:, :nRefs]
-                critic_input = torch.cat((actions, states[:, :2], deltas), dim=1).cpu().data.numpy()
-                q_values, _ = critic.predict(critic_input)
-                q_values = torch.tensor(q_values, dtype=torch.float32, device=device)
-
-                actor_loss = (-log_probs[:, [0]] * (q_values - rewards.mean())).mean()
-                actor_loss.backward()
-                actorOptim.step()
-
-        return actor_loss
-
-    def updateCritic(action, state, deltas, reward, next_action, next_state, next_deltas):
-        # Calculate TD(0) error and update critic GP
-        X = np.hstack((action, state, deltas))
-        nX = np.hstack((next_action, next_state, next_deltas))
-        Y = reward + discount * critic(nX)[0]
-        critic.update(X, Y)
+        return total_actor_loss, total_critic_loss
 
     for episode in range(1, episodes + 1):
-        state = env.reset()
+        state, ref = env.reset()
         total_reward = 0
+        tC_updates = 0
+
         epsilon = np.exp(-episode * epsilonDecay / episodes)
         if epsilon <= 0.1:
             epsilon = 0
@@ -181,21 +155,19 @@ if __name__ == '__main__':
 
         for step in range(max_episode_len):
             sample = (np.random.random() < epsilon)
-            action, deltas = actWithRef(actorTarget, state, sample=sample)
-            next_state, reward, done, _ = env.step(action)
+            # Take action
+            actorInput = torch.tensor(np.hstack([state, ref[:, :nRefs]]), device=device)
+            action, _ = actorTarget.act(actorInput, numpy=True, sample=sample)
+            next_state, reward, done, ref = env.step(action)
             total_reward += reward
 
             # Update actor
-            actor_loss = updateActor()
+            replayBuff.add(*map(lambda x: torch.tensor(x), [state, action, reward, next_state, done, ref]))
+            actor_loss, critic_loss = update()
             if actor_loss != 0:
                 report.log('actorLoss', actor_loss)
-                report.log('netSigma', actor.sigma.item())
+                report.log('criticLoss', critic_loss)
 
-            # Update actor
-            next_action, next_deltas = actWithRef(actorTarget, next_state)
-            updateCritic(action, state[:, :2], deltas, reward, next_action, next_state[:, :2], next_deltas)
-
-            replayBuff.add(state, action, reward, next_state, done)
             states.append(next_state[0, 0])
 
             if done:
@@ -203,15 +175,18 @@ if __name__ == '__main__':
 
             state = next_state
 
-        if episode % update_freq == 0:
+        if episode % a_update_freq == 0:
             actorTarget.load_state_dict(actor.state_dict())
 
+        if episode % c_update_freq == 0:
+            criticTarget.load_state_dict(critic.state_dict())
+
             # Plot to see how it looks
-            if systemPlots:
-                plotData = np.stack((states, env.reference.r[:len(states)]), axis=-1)
-                report.savePlot(f"episode_{episode}_plot",
-                                ['State', 'Ref'],
-                                plotData)
+        if systemPlots and episode % plot_freq == 0:
+            plotData = np.stack((states, env.reference.r[:len(states)]), axis=-1)
+            report.savePlot(f"episode_{episode}_plot",
+                            ['State', 'Ref'],
+                            plotData)
 
         print(f"Episode {episode}: Reward = {total_reward}, Epsilon = {epsilon:.2f}")
         report.log('rewards', total_reward, episode)
