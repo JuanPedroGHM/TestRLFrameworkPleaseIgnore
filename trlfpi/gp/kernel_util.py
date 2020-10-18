@@ -32,6 +32,8 @@ def rbf_f_t(x0: Tensor, x1: Tensor, params):
     if torch.any(length == 0):
         return torch.zeros((x0.shape[0], x1.shape[0]))
 
-    dist = torch.cdist(x0 / length, x1 / length, p=2)
+    a = x0 / length
+    b = x1 / length
+    dist = torch.cdist(a, b, p=2)
     K = theta**2 * torch.exp(-.5 * dist)
     return K

@@ -85,7 +85,7 @@ class GP():
 
     def brute(self):
 
-        lengthBounds = (np.max(self.X_TRAIN, axis=0) - np.min(self.X_TRAIN, axis=0)) * 10
+        lengthBounds = (np.max(self.X_TRAIN, axis=0) - np.min(self.X_TRAIN, axis=0)) * 100
         ranges = [(0, 250)]
         ranges.extend([(0, bound) for bound in lengthBounds])
         stepSizes = np.array([(range[1] - range[0]) / self.bGridSize for range in ranges])
@@ -119,6 +119,7 @@ class GP():
             res = optim.minimize(self.logLikelihood, params, bounds=bounds)
             self.kernel.params = res.x
 
+        print(self.kernel.params)
         K = self.kernel(X, X)
         try:
             self.L, self.alpha = self.L_alpha(K, X, Y)

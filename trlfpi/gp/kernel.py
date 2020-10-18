@@ -38,12 +38,12 @@ class Kernel():
                 tmpParams = customParams[paramIndex:paramIndex + len(params)]
                 paramIndex += len(params)
 
-                result += f(x1, x2, tmpParams)
+                result = result + f(x1, x2, tmpParams)
             return result
 
         else:
             for f, params in zip(self.kernelFunctions, self.paramsArray):
-                result += f(x1, x2, params)
+                result = result + f(x1, x2, params)
 
             return result
 

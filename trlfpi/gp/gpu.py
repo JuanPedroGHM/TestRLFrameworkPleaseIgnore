@@ -69,7 +69,7 @@ class GPu():
         alpha = torch.cholesky_solve(Y - self.priorMean(X), L)
         return L, alpha
 
-    def logLikelihood(self, params: torch.Tensor) -> torch.Tensor:
+    def logLikelihood(self, params: torch.Tensor = None) -> torch.Tensor:
         K = self.kernel(self.X_TRAIN, self.X_TRAIN, customParams=params)
         L, alpha = self.L_alpha(K, self.X_TRAIN, self.Y_TRAIN)
         result = 0.5 * self.Y_TRAIN.T @ alpha + torch.sum(torch.log(torch.diag(L)))
@@ -79,10 +79,10 @@ class GPu():
     def brute(self):
 
         lengthBounds = (torch.max(self.X_TRAIN, dim=0)[0] - torch.min(self.X_TRAIN, dim=0)[0]) * 10
-        ranges = [(0, 250)]
-        ranges.extend([(0, bound) for bound in lengthBounds])
-        stepSizes = torch.tensor([(range[1] - range[0]) / self.bGridSize for range in ranges])
-        grid = [torch.arange(range[0], range[1], step) for range, step in zip(ranges, stepSizes)]
+        ranges = [(0.0, torch.tensor(100.0))]
+        ranges.extend([(0.0, bound) for bound in lengthBounds])
+        stepSizes = [(r[1] - r[0]) / self.bGridSize for r in ranges]
+        grid = [torch.arange(r[0], r[1].item(), step.item()) for r, step in zip(ranges, stepSizes)]
         grid = torch.stack(torch.meshgrid(grid)).T.reshape(-1, len(ranges))
         llArray = list(map(self.logLikelihood, grid))
         bestParams = grid[torch.tensor(llArray).argmin()]
@@ -100,19 +100,19 @@ class GPu():
             self.kernel.params = params
 
         if fineTune:
-            params = [torch.tensor(self.kernel.params, requires_grad=True)]
-            lbfgsOptim = torch.optim.LBFGS(params, max_iter=100, lr=1e-4)
+            tParams = [torch.tensor(self.kernel.params, requires_grad=True)]
+            lbfgsOptim = torch.optim.LBFGS(tParams, max_iter=100, lr=1e-4)
 
             def closure():
                 lbfgsOptim.zero_grad()
-                ll = self.logLikelihood(params[0])
+                ll = self.logLikelihood(tParams[0])
                 ll.backward()
                 return ll
 
             lbfgsOptim.step(closure)
 
             # res = (self.logLikelihood, params, bounds=bounds)
-            self.kernel.params = params[0]
+            self.kernel.params = tParams[0]
 
         K = self.kernel(X, X)
         self.L, self.alpha = self.L_alpha(K, X, Y)

@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 
 from scipy.optimize import minimize
@@ -5,6 +6,7 @@ from scipy.optimize import minimize
 from typing import Any
 
 from .gp import GP
+from .gpu import GPu
 from .kernel import Kernel
 from trlfpi.memory import GPMemory
 
@@ -16,17 +18,27 @@ class Critic():
                  mean: Any = None,
                  memory: int = 1000,
                  optim_freq: int = 100,
-                 bruteFactor: int = 5,
+                 bruteFactor: int = 10,
                  bGridSize: int = 5,
-                 bPoolSize: int = 8):
+                 bPoolSize: int = 8,
+                 device: str = None):
 
-        self.memory = GPMemory(inputSpace, maxSize=memory)
-        kernel = Kernel.RBF(1.0, np.array([1.0 for i in range(inputSpace)]))
-        self.model = GP(kernel,
-                        meanF=mean,
-                        sigma_n=0.1,
-                        bGridSize=bGridSize,
-                        bPoolSize=bPoolSize)
+        self.memory = GPMemory(inputSpace, maxSize=memory, device=device)
+        if device:
+            kernel = Kernel.RBF(1.0, [1.0 for i in range(inputSpace)], gpu=True)
+            self.model = GPu(kernel,
+                             meanF=mean,
+                             sigma_n=0.1,
+                             bGridSize=bGridSize,
+                             bPoolSize=bPoolSize,
+                             device=device)
+        else:
+            kernel = Kernel.RBF(1.0, [1.0 for i in range(inputSpace)])
+            self.model = GP(kernel,
+                            meanF=mean,
+                            sigma_n=0.1,
+                            bGridSize=bGridSize,
+                            bPoolSize=bPoolSize)
         self.optim_freq = optim_freq
         self.updates = 0
         self.bruteFactor = bruteFactor
