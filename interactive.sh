@@ -1,1 +1,7 @@
-docker run -it --rm --gpus $1 trlfpi
+GPU=$1
+VOLUME=$(pwd)
+
+docker run --rm -it \
+            --gpus $GPU \
+            -v $VOLUME:/code/ \
+            trlfpi 
