@@ -69,7 +69,7 @@ if __name__ == '__main__':
             # Optimize actor
             actorOptim.zero_grad()
 
-            actorInput = torch.cat((states, refs[:, :nRefs]), axis=1)
+            actorInput = torch.cat((states, refs[:, 1:nRefs + 1]), axis=1)
             actions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
 
             actor_loss = (-log_probs * (rewards - rewards.mean())).sum()
@@ -77,6 +77,8 @@ if __name__ == '__main__':
             actorOptim.step()
 
         return actor_loss
+
+    bestScore = -1e6
 
     for episode in range(1, episodes + 1):
         state, ref = env.reset()
@@ -92,7 +94,7 @@ if __name__ == '__main__':
 
             # Take action
             with torch.no_grad():
-                actorInput = torch.tensor(np.hstack([state, ref[:, :nRefs]]), device=device)
+                actorInput = torch.tensor(np.hstack([state, ref[:, 1:nRefs + 1]]), device=device)
                 action, _ = actorTarget.act(actorInput, numpy=True, sample=sample)
 
             next_state, reward, done, next_ref = env.step(action)
@@ -132,5 +134,9 @@ if __name__ == '__main__':
         report.log('rewards', total_reward, episode)
         report.log('epsilon', epsilon, episode)
 
+        if total_reward > bestScore:
+            bestScore = total_reward
+            report.pickle('actor_best', actor.state_dict())
+
     report.generateReport()
-    report.pickle('actor', actor.state_dict())
+    report.pickle('actor_cp', actor.state_dict())

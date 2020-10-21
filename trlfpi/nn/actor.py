@@ -35,7 +35,7 @@ class NNActor(nn.Module):
 
     def log_prob(self, mu: torch.Tensor, std: torch.Tensor, actions: torch.Tensor):
         alpha = -0.5 * torch.pow((actions - mu) / (std), 2)
-        return torch.log((1 / (np.sqrt(2 * np.pi) * std)) * torch.exp(alpha))
+        return alpha - torch.log((np.sqrt(2 * np.pi) * std))
 
     def act(self, obs, sample: bool = False, numpy=False, prevActions=None):
         mu, std = self.forward(obs)

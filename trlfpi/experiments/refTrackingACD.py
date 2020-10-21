@@ -14,7 +14,7 @@ from trlfpi.memory import GymMemory
 torch.set_default_dtype(torch.double)
 
 # Report
-report = Report('refTrackingAC')
+report = Report('refTrackingACD')
 timer = Timer()
 
 
@@ -29,10 +29,10 @@ if __name__ == '__main__':
     parser.add_argument("--nRefs", type=int, default=1)
     parser.add_argument("--discount", type=float, default=0.7)
 
-    # NN params
+    # NN Actor params
     parser.add_argument("--c_lr", type=float, default=1e-3)
-    parser.add_argument("--a_lr", type=float, default=1e-3)
-    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--a_lr", type=float, default=1e-5)
+    parser.add_argument("--batch_size", type=int, default=512)
     parser.add_argument("--buffer_size", type=int, default=5000)
     parser.add_argument("--tau", type=float, default=5e-3)
     parser.add_argument("--update_freq", type=int, default=2)
@@ -62,11 +62,10 @@ if __name__ == '__main__':
     c_lr = args.c_lr
     batch_size = args.batch_size
     buffer_size = args.buffer_size
-    tau = args.tau
-    update_freq = args.update_freq
-
     epsilonDecay = args.epsilonDecay
     exploration_std = args.exploration_std
+    tau = args.tau
+    update_freq = args.update_freq
 
     systemPlots = args.plots
     plot_freq = args.plot_freq
@@ -77,17 +76,16 @@ if __name__ == '__main__':
     env = gym.make(args.env)
 
     # Init policy networks
-    actor = NNActor(2 + nRefs, 1, [128, 32], outputActivation=nn.Tanh).to(device)
-    actorTarget = NNActor(2 + nRefs, 1, [128, 32], outputActivation=nn.Tanh).to(device)
+    actor = NNActor(nRefs + 1, 1, [64], outputActivation=nn.Tanh).to(device)
+    actorTarget = NNActor(nRefs + 1, 1, [64], outputActivation=nn.Tanh).to(device)
     actorTarget.load_state_dict(actor.state_dict())
     actorTarget.eval()
 
     actorOptim = torch.optim.Adam(actor.parameters(), lr=a_lr)
 
-    # Init critit [Action + State + nRefs]
-
-    critic = NNCritic(1 + 2 + (nRefs + 1), [128, 32], outputActivation=InvertedRELU).to(device)
-    criticTarget = NNCritic(1 + 2 + (nRefs + 1), [128, 32], outputActivation=InvertedRELU).to(device)
+    # Init critit [State + Ref + Action]
+    critic = NNCritic((1 + nRefs) * 2 + 1, [256, 32], outputActivation=InvertedRELU).to(device)
+    criticTarget = NNCritic((1 + nRefs) * 2 + 1, [256, 32], outputActivation=InvertedRELU).to(device)
     criticTarget.load_state_dict(critic.state_dict())
     criticTarget.eval()
 
@@ -98,46 +96,62 @@ if __name__ == '__main__':
     replayBuff = GymMemory(env.observation_space,
                            env.action_space,
                            reference_space=env.reference_space,
-                           maxSize=buffer_size,
-                           device=device)
+                           device=device,
+                           maxSize=buffer_size)
 
-    def update(step: int):
+    def update(step):
 
-        total_critic_loss = 0
-        total_actor_loss = 0
+        actor_loss = 0
+        critic_loss = 0
         if replayBuff.size >= batch_size:
 
-            # Update critic
             states, actions, rewards, next_states, dones, refs = replayBuff.get(batchSize=batch_size)
-
-            criticOptim.zero_grad()
-            cInput = torch.cat((actions, states, refs[:, :nRefs + 1]), axis=1)
-            q = critic(cInput)
+            # 1) Update critic
+            # 1.5) Get deltas
 
             with torch.no_grad():
-                next_actions, _ = actorTarget(torch.cat([next_states, refs[:, 2:nRefs + 2]], axis=1))
-                next_q = (1 - dones) * criticTarget(torch.cat([next_actions,
-                                                               next_states,
-                                                               refs[:, 1:nRefs + 2]], axis=1))
+                deltas = torch.cat([refs[:, [0]] - states[:, [0]],
+                                    refs[:, [1]] - next_states[:, [0]],
+                                    torch.zeros((states.shape[0], nRefs), device=device)], axis=1)
+                d2 = torch.cat([states[:, [1]],
+                                next_states[:, [1]],
+                                torch.zeros((states.shape[0], nRefs), device=device)], axis=1)
+                cStates = next_states
+                predictedActions = []
+                for i in range(2, nRefs + 2):
+                    cActionsInput = torch.cat([refs[:, i:nRefs + i] - cStates[:, [0]],
+                                              cStates[:, [1]]], axis=1)
+                    cActions, _ = actorTarget(cActionsInput)
+                    predictedActions.append(cActions)
 
-            loss = criticLossF(q, rewards + discount * next_q)
+                    pStates = env.predict(cStates, cActions, gpu=True).T
+                    deltas[:, [i]] += refs[:, [i]] - pStates[:, [0]]
+                    d2[:, [i]] += pStates[:, [1]]
+                    cStates = pStates
+
+                cInput = torch.cat([actions, deltas[:, :nRefs + 1], d2[:, :nRefs + 1]], axis=1)
+                cNextInput = torch.cat([predictedActions[0], deltas[:, 1:nRefs + 2], d2[:, 1:nRefs + 2]], axis=1)
+
+            # 2) Update actor
+            criticOptim.zero_grad()
+            qs = critic(cInput)
+            next_q = (1 - dones) * criticTarget(cNextInput)
+            loss = criticLossF(qs, rewards + discount * next_q)
             loss.backward()
             criticOptim.step()
-            actorTarget
-            total_critic_loss += loss
+            critic_loss += loss
+
+            # Get logProbs
+            actorOptim.zero_grad()
+            qs = critic(cInput)
+            actorInput = torch.cat([refs[:, 1:nRefs + 1] - states[:, [0]],
+                                    states[:, [1]]], axis=1)
+            actorAction, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
 
             # Optimize actor
-            actorOptim.zero_grad()
-
-            actorInput = torch.cat([states, refs[:, 1:nRefs + 1]], axis=1)
-            actorActions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
-            qs = critic(torch.cat([actions, states, refs[:, :nRefs + 1]], axis=1))
-
             actor_loss = -log_probs.T @ qs
             actor_loss.backward()
             actorOptim.step()
-
-            total_actor_loss += actor_loss
 
             # Update target networks
             if step % update_freq == 0:
@@ -147,7 +161,7 @@ if __name__ == '__main__':
                 for targetP, oP in zip(actorTarget.parameters(), actor.parameters()):
                     targetP = (1 - tau) * targetP + tau * oP
 
-        return total_actor_loss, total_critic_loss
+        return actor_loss, critic_loss
 
     bestScore = -1e9
     for episode in range(1, episodes + 1):
@@ -164,7 +178,8 @@ if __name__ == '__main__':
             sample = (np.random.random() < epsilon)
             # Take action
             with torch.no_grad():
-                actorInput = torch.tensor(np.hstack([state, ref[:, 1:nRefs + 1]]), device=device)
+                actorInput = torch.tensor(np.hstack([ref[:, 1:nRefs + 1] - state[:, [0]],
+                                                     state[:, [1]]]), device=device)
                 action, _ = actor.act(actorInput, numpy=True, sample=sample)
             next_state, reward, done, next_ref = env.step(action)
             total_reward += reward

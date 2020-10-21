@@ -13,8 +13,9 @@ class LinearSystem():
         self.A = np.array(config["A"], dtype=float)
         self.B = np.array(config["B"], dtype=float)
 
-        self.A_t = torch.tensor(self.A, dtype=torch.float32)
-        self.B_t = torch.tensor(self.B, dtype=torch.float32)
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.A_t = torch.tensor(self.A, device=device)
+        self.B_t = torch.tensor(self.B, device=device)
 
     def apply(self, u):
         self.x = self.A @ self.x + self.B @ u
@@ -27,7 +28,7 @@ class LinearSystem():
             return self.A @ x + self.B @ u
 
     def predict_t(self, x: torch.Tensor, u: torch.Tensor):
-        return self.A_t @ x + self.B_t @ u
+        return self.A_t @ x.T + self.B_t @ u.T
 
 
 class Reference():
