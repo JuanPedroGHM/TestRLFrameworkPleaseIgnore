@@ -2,33 +2,40 @@ import pathlib
 import json
 import pickle
 from torch.utils.tensorboard import SummaryWriter
-import matplotlib.pyplot as plt
 from typing import List, Dict
 import numpy as np
 from functools import reduce
 
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
 
 class Report():
 
-    def __init__(self, reportName: str, tensorboard=True):
+    def __init__(self, reportName: str, reportId: str = None, tensorboard=True):
 
         self.tensorboard = tensorboard
         self.path: pathlib.Path = pathlib.Path("results") / reportName
         if not self.path.exists():
             self.path.mkdir()
 
-        reportId = reduce(lambda x, y: x + 1, self.path.iterdir(), 0)
-        self.path = self.path / str(reportId)
+        if not reportId:
+            reportId = reduce(lambda x, y: x + 1, self.path.iterdir(), 0)
+            self.path = self.path / str(reportId)
+        else:
+            self.path = self.path / reportId
+
         if not self.path.exists():
             self.path.mkdir()
-        else:
-            print("Something is wrong")
-            raise FileExistsError
 
         self.plotsPath = self.path / 'plots'
-        self.plotsPath.mkdir()
+        if not self.plotsPath.exists():
+            self.plotsPath.mkdir()
+
         self.picklePath = self.path / 'pickle'
-        self.picklePath.mkdir()
+        if not self.picklePath.exists():
+            self.picklePath.mkdir()
 
         if self.tensorboard:
             self.writer = SummaryWriter(f"{self.path / 'tensorboard'}")
@@ -38,6 +45,10 @@ class Report():
     def logArgs(self, argsDict: Dict):
         with open(self.path / 'args.json', 'w+') as f:
             json.dump(argsDict, f, indent=4)
+
+    def getArgs(self):
+        with open(self.path / 'args.json', 'r') as f:
+            return json.load(f)
 
     def log(self, name: str, value, step=None):
         if name in self.variables.keys():
@@ -76,9 +87,15 @@ class Report():
                 plt.plot(Y[:, i], label=variableNames[i])
 
         plt.xlabel('Steps')
+        plt.legend()
+        plt.grid()
         plt.savefig(f"{self.plotsPath / plotName}.pdf", format="pdf")
         plt.close()
 
     def pickle(self, name, obj):
         with open(f"{self.picklePath}/{name}.p", 'wb') as f:
             pickle.dump(obj, f)
+
+    def unpickle(self, name):
+        with open(self.picklePath / f"{name}.p", 'rb') as f:
+            return pickle.load(f)

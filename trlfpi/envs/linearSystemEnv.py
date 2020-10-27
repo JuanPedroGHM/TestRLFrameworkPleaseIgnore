@@ -34,11 +34,10 @@ class LinearSystemEnv(gym.Env):
         systemOut = self.system.apply(action)
 
         reward = -1 * (ref[0, 0] - systemOut[0, 0])**2
-        observation = self.system.x.T
 
         self.done = self.reference.counter == 1
 
-        return observation, reward, self.done, ref.T
+        return systemOut.T, reward, self.done, ref.T
 
     def predict(self, x, a, gpu=False):
         return self.system.predict(x, a, gpu=gpu)

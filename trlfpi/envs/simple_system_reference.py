@@ -118,7 +118,7 @@ if __name__ == "__main__":
     plt.plot(r, '--', label="r")
     plt.plot(x, label="x")
     plt.plot(u, label="u")
-    plt.ylim((-10, 10))
+    plt.ylim((-1, 1))
 
     plt.grid()
     plt.legend()

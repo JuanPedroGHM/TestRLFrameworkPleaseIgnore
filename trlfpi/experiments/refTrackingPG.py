@@ -14,16 +14,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="linear-with-ref-v0")
     parser.add_argument("--nRefs", type=int, default=1)
-    parser.add_argument("--a_lr", type=float, default=1e-5)
-    parser.add_argument("--exploration_noise", type=float, default=0.25)
-    parser.add_argument("--discount", type=float, default=0.99)
+    parser.add_argument("--aCost", type=float, default=0.0)
+    parser.add_argument("--a_lr", type=float, default=1e-3)
+    parser.add_argument("--discount", type=float, default=0.3)
     parser.add_argument("--episodes", type=int, default=200)
     parser.add_argument("--max_episode_len", type=int, default=1000)
     parser.add_argument("--buffer_size", type=int, default=5000)
-    parser.add_argument("--batch_size", type=int, default=512)
-    parser.add_argument("--update_freq", type=int, default=25)
-    parser.add_argument("--epsilonDecay", type=float, default=3.0)
+    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--update_freq", type=int, default=1)
+    parser.add_argument("--weightDecay", type=float, default=0.0)
     parser.add_argument("--plots", action='store_true')
+    parser.add_argument("--plot_freq", type=int, default=10)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
@@ -37,12 +38,14 @@ if __name__ == '__main__':
     batch_size = args.batch_size
     buffer_size = args.buffer_size
     update_freq = args.update_freq
-    epsilonDecay = args.epsilonDecay
+    weightDecay = args.weightDecay
     nRefs = args.nRefs
+    aCost = args.aCost
     systemPlots = args.plots
+    plot_freq = args.plot_freq
 
     # Report
-    report = Report('pg_ref_no_critic')
+    report = Report('REINFORCE')
     report.logArgs(args.__dict__)
 
     # Setup
@@ -50,12 +53,16 @@ if __name__ == '__main__':
 
     # Smaller net
     # Init policy network
-    actor = NNActor(2 + nRefs, 1, [256, 64], outputActivation=nn.Tanh).to(device)
-    actorTarget = NNActor(2 + nRefs, 1, [256, 64], outputActivation=nn.Tanh).to(device)
+    actor = NNActor(2 + nRefs, 1, [64, 8],
+                    activation=nn.Tanh,
+                    outputActivation=nn.Identity).to(device)
+    actorTarget = NNActor(2 + nRefs, 1, [64, 8],
+                          activation=nn.Tanh,
+                          outputActivation=nn.Identity).to(device)
     actorTarget.load_state_dict(actor.state_dict())
     actorTarget.eval()
 
-    actorOptim = torch.optim.Adam(actor.parameters(), lr=a_lr)
+    actorOptim = torch.optim.Adam(actor.parameters(), lr=a_lr, weight_decay=weightDecay)
 
     replayBuff = GymMemory(env.observation_space, env.action_space, reference_space=env.reference_space, maxSize=buffer_size, device=device)
 
@@ -67,12 +74,16 @@ if __name__ == '__main__':
             states, actions, rewards, next_states, dones, refs = replayBuff.get(batchSize=batch_size)
 
             # Optimize actor
+            actor.train()
             actorOptim.zero_grad()
 
             actorInput = torch.cat((states, refs[:, 1:nRefs + 1]), axis=1)
-            actions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
+            pActions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
 
-            actor_loss = (-log_probs * (rewards - rewards.mean())).sum()
+            nnlLoss = (-log_probs * (rewards - rewards.mean())).sum()
+            actionLoss = aCost * pActions.pow(2).sum()
+            actor_loss = nnlLoss + actionLoss
+
             actor_loss.backward()
             actorOptim.step()
 
@@ -83,14 +94,14 @@ if __name__ == '__main__':
     for episode in range(1, episodes + 1):
         state, ref = env.reset()
         total_reward = 0
-        epsilon = np.exp(-episode * epsilonDecay / episodes)
-        if epsilon <= 0.1:
-            epsilon = 0
 
-        states = [state[0, 0]]
+        states = []
+        actions = []
+        refs = []
 
         for step in range(max_episode_len):
-            sample = (np.random.random() < epsilon)
+            # sample = (np.random.random() < epsilon)
+            sample = True
 
             # Take action
             with torch.no_grad():
@@ -99,6 +110,11 @@ if __name__ == '__main__':
 
             next_state, reward, done, next_ref = env.step(action)
             total_reward += reward
+
+            # Save for plotting
+            states.append(state[0, 0])
+            actions.append(action[0, 0])
+            refs.append(ref[0, 0])
 
             # Update actor
             replayBuff.add(*map(lambda x: torch.tensor(x), [state,
@@ -110,9 +126,6 @@ if __name__ == '__main__':
             actor_loss = updateActor()
             if actor_loss != 0:
                 report.log('actorLoss', actor_loss)
-                report.log('netSigma', actor.sigma.item())
-
-            states.append(next_state[0, 0])
 
             if done:
                 break
@@ -120,23 +133,22 @@ if __name__ == '__main__':
             state = next_state
             ref = next_ref
 
-        if episode % update_freq == 0:
-            actorTarget.load_state_dict(actor.state_dict())
-
-            # Plot to see how it looks
-            if systemPlots:
-                plotData = np.stack((states, env.reference.r[:len(states)]), axis=-1)
-                report.savePlot(f"episode_{episode}_plot",
-                                ['State', 'Ref'],
-                                plotData)
-
-        print(f"Episode {episode}: Reward = {total_reward}, Epsilon = {epsilon:.2f}")
-        report.log('rewards', total_reward, episode)
-        report.log('epsilon', epsilon, episode)
-
+        # Plot to see how it looks
         if total_reward > bestScore:
             bestScore = total_reward
             report.pickle('actor_best', actor.state_dict())
+
+        if systemPlots and episode % plot_freq == 0:
+            plotData = np.stack((states, refs, actions), axis=-1)
+            report.savePlot(f"episode_{episode}_plot",
+                            ['State', 'Ref', 'Actions'],
+                            plotData)
+
+        if episode % update_freq == 0:
+            actorTarget.load_state_dict(actor.state_dict())
+
+        print(f"Episode {episode}: Reward = {total_reward}")
+        report.log('rewards', total_reward, episode)
 
     report.generateReport()
     report.pickle('actor_cp', actor.state_dict())
