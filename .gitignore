@@ -124,7 +124,9 @@ dmypy.json
 
 # End of https://www.gitignore.io/api/linux,python
 results/
+notebooks/.ipynb_checkpoints
 
 # ENV
 .envrc
 .vim
+
