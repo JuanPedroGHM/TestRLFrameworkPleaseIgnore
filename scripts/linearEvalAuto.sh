@@ -1,5 +1,5 @@
-for i in {1..27}
+for i in {0..24}
 do
-    echo "Evaluating REINFORCE/batch0 $i"
-    python -m trlfpi.eval.linearSystemEvaluation REINFORCE/batch0 $i --plots
+    echo "Evaluating ACD $i"
+    python -m trlfpi.eval.evalACD ACD $i --plots
 done

@@ -28,7 +28,7 @@ if __name__ == "__main__":
     nRefs = trainingArgs['nRefs']
     modelParams = report.unpickle("actor_best")
 
-    actor = NNActor(nRefs + 1, 1, [64, 8],
+    actor = NNActor(1 + nRefs, 1, [64, 8],
                     activation=nn.Tanh,
                     outputActivation=nn.Identity).to(device)
     actor.load_state_dict(modelParams)
@@ -49,7 +49,8 @@ if __name__ == "__main__":
 
             for step in range(args.episodeLength):
 
-                actorInput = torch.tensor(np.hstack([state, ref[:, 1:nRefs + 1]]), device=device)
+                actorInput = torch.tensor(np.hstack([ref[:, 1:nRefs + 1] - state[:, [0]],
+                                                     state[:, [1]]]), device=device)
                 action, _ = actor.act(actorInput, numpy=True, sample=True)
 
                 next_state, reward, done, next_ref = env.step(action)
