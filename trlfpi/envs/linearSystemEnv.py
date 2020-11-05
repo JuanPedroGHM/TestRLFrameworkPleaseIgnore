@@ -17,6 +17,8 @@ class LinearSystemEnv(gym.Env):
         self.observation_space = Box(low=-np.inf, high=np.inf, shape=(2,))
         self.action_space = Box(low=-np.inf, high=np.inf, shape=(1,))
         self.reference_space = Box(low=-np.inf, high=np.inf, shape=(6,))
+        self.alpha = 0.0
+        self.lastAction = None
         self.setup()
 
     def setup(self):
@@ -27,13 +29,23 @@ class LinearSystemEnv(gym.Env):
 
         self.done = False
         ref = self.reference.getNext()
+        self.lastAction = None
         return self.system.x.T, ref.T
 
     def step(self, action):
         ref = self.reference.getNext()
         systemOut = self.system.apply(action)
 
-        reward = -1 * (ref[0, 0] - systemOut[0, 0])**2
+        if not self.lastAction:
+            self.lastAction = action
+            actionCost = 0
+        else:
+            actionCost = np.power(action[0, 0] - self.lastAction[0, 0], 2)
+            self.lastAction = action
+
+        stateCost = np.power(ref[0, 0] - systemOut[0, 0], 2)
+
+        reward = - (stateCost + self.alpha * actionCost)
 
         self.done = self.reference.counter == 1
 

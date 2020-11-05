@@ -50,6 +50,7 @@ if __name__ == '__main__':
 
     # Setup
     env = gym.make(args.env)
+    env.alpha = aCost
 
     # Smaller net
     # Init policy network
@@ -80,10 +81,7 @@ if __name__ == '__main__':
             actorInput = torch.cat((states, refs[:, 1:nRefs + 1]), axis=1)
             pActions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
 
-            nnlLoss = (-log_probs * (rewards - rewards.mean())).sum()
-            actionLoss = aCost * pActions.pow(2).sum()
-            actor_loss = nnlLoss + actionLoss
-
+            actor_loss = (-log_probs * (rewards - rewards.mean())).mean()
             actor_loss.backward()
             actorOptim.step()
 

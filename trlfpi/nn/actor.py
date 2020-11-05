@@ -38,7 +38,7 @@ class NNActor(nn.Module):
     def forward(self, obs):
         z = self.encoder(obs)
         mu = self.mu(z)
-        sigma = self.sigma(z) + 1e-5
+        sigma = self.sigma(z) + 1e-6
         return mu, sigma
 
     def log_prob(self, mu: torch.Tensor, std: torch.Tensor, actions: torch.Tensor):
@@ -47,9 +47,10 @@ class NNActor(nn.Module):
 
     def act(self, obs, sample: bool = False, numpy=False, prevActions=None):
         mu, std = self.forward(obs)
+
         if sample:
             dist = Normal(mu, std)
-            action = dist.sample()
+            action = dist.rsample()
         else:
             action = mu
 

@@ -28,7 +28,7 @@ if __name__ == "__main__":
     nRefs = trainingArgs['nRefs']
     modelParams = report.unpickle("actor_best")
 
-    actor = NNActor(nRefs + 1, 1, [64, 8],
+    actor = NNActor(nRefs + 2, 1, [64, 8],
                     activation=nn.Tanh,
                     outputActivation=nn.Identity).to(device)
     actor.load_state_dict(modelParams)

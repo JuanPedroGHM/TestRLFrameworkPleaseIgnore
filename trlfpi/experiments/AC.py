@@ -13,13 +13,9 @@ from trlfpi.memory import GymMemory
 
 torch.set_default_dtype(torch.double)
 
-# Report
-report = Report('refTrackingAC')
-timer = Timer()
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument("report", type=str)
     parser.add_argument("--env", type=str, default="linear-with-ref-v0")
     parser.add_argument("--cpus", type=int, default=1)
 
@@ -30,9 +26,9 @@ if __name__ == '__main__':
     parser.add_argument("--discount", type=float, default=0.7)
 
     # NN params
-    parser.add_argument("--c_lr", type=float, default=1e-3)
-    parser.add_argument("--a_lr", type=float, default=1e-3)
-    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--c_lr", type=float, default=1e-5)
+    parser.add_argument("--a_lr", type=float, default=1e-5)
+    parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--buffer_size", type=int, default=5000)
     parser.add_argument("--tau", type=float, default=5e-3)
     parser.add_argument("--update_freq", type=int, default=2)
@@ -69,10 +65,15 @@ if __name__ == '__main__':
     systemPlots = args.plots
     plot_freq = args.plot_freq
 
+    # Report
+    report = Report(args.report)
+    timer = Timer()
+
     report.logArgs(args.__dict__)
 
     # Setup
     env = gym.make(args.env)
+    env.alpha = aCost
 
     # Init policy networks
     actor = NNActor(2 + nRefs, 1,
@@ -90,11 +91,11 @@ if __name__ == '__main__':
 
     # Init critit [Action + State + nRefs]
 
-    critic = NNCritic(1 + 2 + (nRefs + 1),
+    critic = NNCritic(1 + 2 + nRefs,
                       [128, 32],
                       activation=nn.Tanh,
                       outputActivation=InvertedRELU).to(device)
-    criticTarget = NNCritic(1 + 2 + (nRefs + 1),
+    criticTarget = NNCritic(1 + 2 + nRefs,
                             [128, 32],
                             activation=nn.Tanh,
                             outputActivation=InvertedRELU).to(device)
@@ -113,59 +114,55 @@ if __name__ == '__main__':
 
     def update(step: int):
 
-        total_critic_loss = 0
-        total_actor_loss = 0
+        # Update critic
+        states, actions, rewards, next_states, dones, refs = replayBuff.get(batchSize=batch_size)
 
-        if replayBuff.size >= batch_size:
+        criticOptim.zero_grad()
+        cInput = torch.cat((actions, states, refs[:, 1:nRefs + 1]), axis=1)
+        q = critic(cInput)
 
-            # Update critic
-            states, actions, rewards, next_states, dones, refs = replayBuff.get(batchSize=batch_size)
+        with torch.no_grad():
+            next_actions, _ = actorTarget(torch.cat([next_states, refs[:, 2:nRefs + 2]], axis=1))
+            next_q = (1 - dones) * criticTarget(torch.cat([next_actions,
+                                                           next_states,
+                                                           refs[:, 2:nRefs + 2]], axis=1))
 
-            criticOptim.zero_grad()
-            cInput = torch.cat((actions, states, refs[:, :nRefs + 1]), axis=1)
-            q = critic(cInput)
+        critic_loss = criticLossF(q, rewards + discount * next_q)
+        critic_loss.backward()
+        criticOptim.step()
 
-            with torch.no_grad():
-                next_actions, _ = actorTarget(torch.cat([next_states, refs[:, 2:nRefs + 2]], axis=1))
-                next_q = (1 - dones) * criticTarget(torch.cat([next_actions,
-                                                               next_states,
-                                                               refs[:, 1:nRefs + 2]], axis=1))
+        # Optimize actor
+        actorOptim.zero_grad()
 
-            loss = criticLossF(q, rewards + discount * next_q)
-            loss.backward()
-            criticOptim.step()
-            actorTarget
-            total_critic_loss += loss
+        actorInput = torch.cat([states, refs[:, 1:nRefs + 1]], axis=1)
+        predActions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
 
-            # Optimize actor
-            actorOptim.zero_grad()
+        with torch.no_grad():
+            qs = critic(torch.cat([actions, actorInput], axis=1))
+            vs = critic.value(actorInput, actor, nSamples=100)
+            adv = qs - vs
 
-            actorInput = torch.cat([states, refs[:, 1:nRefs + 1]], axis=1)
-            predActions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
-            qs = critic(torch.cat([actions, states, refs[:, :nRefs + 1]], axis=1))
+        nll = (-log_probs * adv).mean()
+        actor_loss = nll
+        actor_loss.backward()
+        actorOptim.step()
 
-            nll = -log_probs.T @ qs
-            actionLoss = aCost * predActions.pow(2).sum()
-            actor_loss = nll + actionLoss
-            actor_loss.backward()
-            actorOptim.step()
+        # Update target networks
+        if step % update_freq == 0:
+            for targetP, oP in zip(criticTarget.parameters(), critic.parameters()):
+                targetP = (1 - tau) * targetP + tau * oP
 
-            total_actor_loss += actor_loss
+            for targetP, oP in zip(actorTarget.parameters(), actor.parameters()):
+                targetP = (1 - tau) * targetP + tau * oP
 
-            # Update target networks
-            if step % update_freq == 0:
-                for targetP, oP in zip(criticTarget.parameters(), critic.parameters()):
-                    targetP = (1 - tau) * targetP + tau * oP
-
-                for targetP, oP in zip(actorTarget.parameters(), actor.parameters()):
-                    targetP = (1 - tau) * targetP + tau * oP
-
-        return total_actor_loss, total_critic_loss
+        return critic_loss, actor_loss
 
     bestScore = -1e9
     for episode in range(1, episodes + 1):
         state, ref = env.reset()
         total_reward = 0
+        total_c_loss = 0
+        total_a_loss = 0
 
         states = []
         refs = []
@@ -190,10 +187,11 @@ if __name__ == '__main__':
                                                             next_state,
                                                             done,
                                                             ref]))
-            actor_loss, critic_loss = update(step)
-            if actor_loss != 0:
-                report.log('actorLoss', actor_loss)
-                report.log('criticLoss', critic_loss)
+
+            if replayBuff.size >= batch_size:
+                critic_loss, actor_loss = update(step)
+                total_c_loss += critic_loss
+                total_a_loss += actor_loss
 
             if done:
                 break
@@ -207,8 +205,10 @@ if __name__ == '__main__':
             report.savePlot(f"episode_{episode}_plot",
                             ['State', 'Ref', 'Action'], plotData)
 
-        print(f"Episode {episode}: Reward = {total_reward}")
+        print(f"Episode {episode}: Reward = {total_reward}, Critic_Loss = {total_c_loss}, Actor_Loss = {total_a_loss}")
         report.log('rewards', total_reward, episode)
+        report.log('critic_loss', total_c_loss, episode)
+        report.log('actor_loss', total_a_loss, episode)
 
         if total_reward > bestScore:
             bestScore = total_reward

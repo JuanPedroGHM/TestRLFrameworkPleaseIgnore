@@ -1,9 +1,11 @@
 import torch
+from torch.distributions import Normal
 from torch import nn
 
 from typing import List
 
 from .util import mlp
+from .actor import NNActor
 
 
 class NNCritic(nn.Module):
@@ -24,3 +26,11 @@ class NNCritic(nn.Module):
 
     def forward(self, x: torch.Tensor):
         return self.layers(x)
+
+    def value(self, x: torch.Tensor, actor: NNActor, nSamples: int = 200):
+        values = []
+        mu, std = actor(x)
+        actions = Normal(mu, std).sample([100]).reshape([-1, 1])
+        qs = self.forward(torch.cat([actions, x.repeat_interleave(nSamples, dim=0)], axis=1))
+        values = qs.reshape([x.shape[0], 100]).mean(1, keepdim=True)
+        return values
