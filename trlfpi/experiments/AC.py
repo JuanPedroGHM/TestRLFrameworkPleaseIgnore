@@ -106,16 +106,12 @@ if __name__ == '__main__':
     criticLossF = torch.nn.MSELoss()
 
     # Replay buffer
-    replayBuff = GymMemory(env.observation_space,
-                           env.action_space,
-                           reference_space=env.reference_space,
-                           maxSize=buffer_size,
-                           device=device)
+    replayBuff = GymMemory(buffer_size)
 
     def update(step: int):
 
         # Update critic
-        states, actions, rewards, next_states, dones, refs = replayBuff.get(batchSize=batch_size)
+        states, actions, log_probs, rewards, next_states, dones, refs = replayBuff.get(batchSize=batch_size)
 
         criticOptim.zero_grad()
         cInput = torch.cat((actions, states, refs[:, 1:nRefs + 1]), axis=1)
@@ -135,15 +131,18 @@ if __name__ == '__main__':
         actorOptim.zero_grad()
 
         actorInput = torch.cat([states, refs[:, 1:nRefs + 1]], axis=1)
-        predActions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
+        predActions, c_log_probs = actor.act(actorInput, sample=False, prevActions=actions)
 
+        # Advantage Q(a, s) - V(s)
         with torch.no_grad():
             qs = critic(torch.cat([actions, actorInput], axis=1))
             vs = critic.value(actorInput, actor, nSamples=100)
             adv = qs - vs
 
-        nll = (-log_probs * adv).mean()
-        actor_loss = nll
+        # Importance Weight
+        iw = torch.exp(c_log_probs - log_probs).detach() + 1e-9
+
+        actor_loss = (-c_log_probs * adv * iw).mean()
         actor_loss.backward()
         actorOptim.step()
 
@@ -172,7 +171,7 @@ if __name__ == '__main__':
             # Take action
             with torch.no_grad():
                 actorInput = torch.tensor(np.hstack([state, ref[:, 1:nRefs + 1]]), device=device)
-                action, _ = actor.act(actorInput, numpy=True, sample=True)
+                action, log_prob = actor.act(actorInput, numpy=True, sample=True)
             next_state, reward, done, next_ref = env.step(action)
             total_reward += reward
 
@@ -181,12 +180,8 @@ if __name__ == '__main__':
             actions.append(action[0, 0])
 
             # Update actor
-            replayBuff.add(*map(lambda x: torch.tensor(x), [state,
-                                                            action,
-                                                            reward,
-                                                            next_state,
-                                                            done,
-                                                            ref]))
+            replayBuff.add(list(map(lambda x: torch.tensor(x, device=device),
+                           [state, action, log_prob, reward, next_state, int(done), ref])))
 
             if replayBuff.size >= batch_size:
                 critic_loss, actor_loss = update(step)

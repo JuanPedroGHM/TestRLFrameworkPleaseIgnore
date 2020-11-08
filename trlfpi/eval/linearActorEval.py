@@ -16,12 +16,14 @@ if __name__ == "__main__":
     parser.add_argument("reportId")
     parser.add_argument("--nTests", type=int, default=10)
     parser.add_argument("--episodeLength", type=int, default=1000)
+    parser.add_argument("--sample", action='store_true')
     parser.add_argument("--plots", action='store_true')
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(device)
 
     args = parser.parse_args()
+    print(args)
 
     report = Report(args.experimentName, args.reportId)
     trainingArgs = report.getArgs()
@@ -50,7 +52,7 @@ if __name__ == "__main__":
             for step in range(args.episodeLength):
 
                 actorInput = torch.tensor(np.hstack([state, ref[:, 1:nRefs + 1]]), device=device)
-                action, _ = actor.act(actorInput, numpy=True, sample=True)
+                action, _ = actor.act(actorInput, numpy=True, sample=args.sample)
 
                 next_state, reward, done, next_ref = env.step(action)
                 total_reward += reward

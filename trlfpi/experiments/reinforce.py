@@ -12,6 +12,7 @@ torch.set_default_dtype(torch.double)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument("experiment", type=str)
     parser.add_argument("--env", type=str, default="linear-with-ref-v0")
     parser.add_argument("--nRefs", type=int, default=1)
     parser.add_argument("--aCost", type=float, default=0.0)
@@ -45,7 +46,7 @@ if __name__ == '__main__':
     plot_freq = args.plot_freq
 
     # Report
-    report = Report('REINFORCE')
+    report = Report(args.experiment)
     report.logArgs(args.__dict__)
 
     # Setup
@@ -65,23 +66,26 @@ if __name__ == '__main__':
 
     actorOptim = torch.optim.Adam(actor.parameters(), lr=a_lr, weight_decay=weightDecay)
 
-    replayBuff = GymMemory(env.observation_space, env.action_space, reference_space=env.reference_space, maxSize=buffer_size, device=device)
+    replayBuff = GymMemory(buffer_size)
 
     def updateActor():
 
         actor_loss = 0
         if replayBuff.size >= batch_size:
 
-            states, actions, rewards, next_states, dones, refs = replayBuff.get(batchSize=batch_size)
+            states, actions, log_probs, rewards, next_states, dones, refs = replayBuff.get(batchSize=batch_size)
 
             # Optimize actor
-            actor.train()
             actorOptim.zero_grad()
 
             actorInput = torch.cat((states, refs[:, 1:nRefs + 1]), axis=1)
-            pActions, log_probs = actor.act(actorInput, sample=False, prevActions=actions)
+            pActions, c_log_probs = actor.act(actorInput, sample=False, prevActions=actions)
 
-            actor_loss = (-log_probs * (rewards - rewards.mean())).mean()
+            # Importance Weight
+            iw = torch.exp(c_log_probs - log_probs).detach() + 1e-9
+            adv = rewards - rewards.mean()
+
+            actor_loss = (-c_log_probs * adv * iw).mean()
             actor_loss.backward()
             actorOptim.step()
 
@@ -104,7 +108,7 @@ if __name__ == '__main__':
             # Take action
             with torch.no_grad():
                 actorInput = torch.tensor(np.hstack([state, ref[:, 1:nRefs + 1]]), device=device)
-                action, _ = actorTarget.act(actorInput, numpy=True, sample=sample)
+                action, log_prob = actorTarget.act(actorInput, numpy=True, sample=sample)
 
             next_state, reward, done, next_ref = env.step(action)
             total_reward += reward
@@ -115,12 +119,9 @@ if __name__ == '__main__':
             refs.append(ref[0, 0])
 
             # Update actor
-            replayBuff.add(*map(lambda x: torch.tensor(x), [state,
-                                                            action,
-                                                            reward,
-                                                            next_state,
-                                                            done,
-                                                            ref]))
+            replayBuff.add(list(map(lambda x: torch.tensor(x, device=device),
+                           [state, action, log_prob, reward, next_state, int(done), ref])))
+
             actor_loss = updateActor()
             if actor_loss != 0:
                 report.log('actorLoss', actor_loss)

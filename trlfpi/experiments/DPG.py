@@ -106,11 +106,7 @@ if __name__ == '__main__':
     criticLossF = torch.nn.MSELoss()
 
     # Replay buffer
-    replayBuff = GymMemory(env.observation_space,
-                           env.action_space,
-                           reference_space=env.reference_space,
-                           maxSize=buffer_size,
-                           device=device)
+    replayBuff = GymMemory(buffer_size)
 
     def update(step: int):
 
@@ -176,12 +172,9 @@ if __name__ == '__main__':
             actions.append(action[0, 0])
 
             # Update actor
-            replayBuff.add(*map(lambda x: torch.tensor(x), [state,
-                                                            action,
-                                                            reward,
-                                                            next_state,
-                                                            done,
-                                                            ref]))
+            replayBuff.add(list(map(lambda x: torch.tensor(x, device=device),
+                           [state, action, reward, next_state, int(done), ref])))
+
             if replayBuff.size >= batch_size:
                 critic_loss, actor_loss = update(step)
                 total_c_loss += critic_loss

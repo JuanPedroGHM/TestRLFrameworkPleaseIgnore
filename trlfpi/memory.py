@@ -1,6 +1,7 @@
 import numpy as np
 import torch
-import gym
+import random
+from typing import Tuple, List
 
 
 class GPMemory():
@@ -44,62 +45,23 @@ class GPMemory():
 
 class GymMemory():
 
-    def __init__(self, observation_space: gym.spaces.Box,
-                 action_space: gym.spaces.Box,
-                 reference_space: gym.spaces.Box = None,
-                 maxSize=10000,
-                 device=None):
-        self.maxSize = maxSize
-        self.state = torch.zeros((maxSize, observation_space.shape[0]), device=device)
-        self.action = torch.zeros((maxSize, action_space.shape[0]), device=device)
-        self.reward = torch.zeros((maxSize, 1), device=device)
-        self.next_state = torch.zeros((maxSize, observation_space.shape[0]), device=device)
-        self.done = torch.zeros((maxSize, 1), device=device)
-        self.ref = torch.zeros((maxSize, reference_space.shape[0]), device=device) if reference_space else None
-
-        self.ptr = 0
-        self.looped = False
+    def __init__(self, size):
+        self.maxSize = size
+        self.data: List[Tuple] = []
 
     @property
     def size(self):
-        return self.maxSize if self.looped else self.ptr
+        return len(self.data)
 
-    def add(self, state, act, reward, next_state, done, ref=None):
-        if self.ptr >= self.maxSize:
-            self.ptr = 0
-            self.looped = True
-
-        self.state[self.ptr, :] = state
-        self.action[self.ptr, :] = act
-        self.reward[self.ptr, :] = reward
-        self.next_state[self.ptr, :] = next_state
-        self.done[self.ptr, :] = done
-        if self.ref is not None:
-            self.ref[self.ptr, :] = ref
-
-        self.ptr += 1
+    def add(self, sample: Tuple):
+        self.data.append(sample)
+        while self.size > self.maxSize:
+            self.data.pop(0)
 
     def get(self, batchSize=None):
         if batchSize:
-            if self.looped:
-                idx = torch.randint(self.maxSize, (batchSize,))
-            else:
-                idx = torch.randint(self.ptr, (batchSize,))
-
-            if self.ref is not None:
-                return self.state[idx, :], self.action[idx, :], self.reward[idx, :], self.next_state[idx, :], self.done[idx, :], self.ref[idx, :]
-            else:
-                return self.state[idx, :], self.action[idx, :], self.reward[idx, :], self.next_state[idx, :], self.done[idx, :]
+            batch = random.choices(self.data, k=batchSize)
+            return map(lambda x: torch.stack(x).reshape(batchSize, -1), zip(*batch))
         else:
-            if self.looped:
-                if self.ref is not None:
+            return map(lambda x: torch.stack(x).reshape(self.maxSize, -1), zip(*self.data))
 
-                    return self.state, self.action, self.reward, self.next_state, self.done, self.ref
-                else:
-                    return self.state, self.action, self.reward, self.next_state, self.done
-
-            else:
-                if self.ref is not None:
-                    return self.state[:self.ptr, :], self.action[:self.ptr, :], self.reward[:self.ptr, :], self.next_state[:self.ptr, :], self.done[:self.ptr, :], self.ref[:self.ptr, :]
-                else:
-                    return self.state[:self.ptr, :], self.action[:self.ptr, :], self.reward[:self.ptr, :], self.next_state[:self.ptr, :], self.done[:self.ptr, :]
