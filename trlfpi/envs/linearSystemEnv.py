@@ -16,7 +16,7 @@ class LinearSystemEnv(gym.Env):
         self.h = configReference['h']
         self.observation_space = Box(low=-np.inf, high=np.inf, shape=(2,))
         self.action_space = Box(low=-np.inf, high=np.inf, shape=(1,))
-        self.reference_space = Box(low=-np.inf, high=np.inf, shape=(6,))
+        self.reference_space = Box(low=-np.inf, high=np.inf, shape=(configReference['h'] + 1,))
         self.alpha = 0.0
         self.lastAction = None
         self.setup()

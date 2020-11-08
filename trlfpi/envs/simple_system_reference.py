@@ -87,7 +87,7 @@ configSystem = {'A': [[0.9590, 0.03697], [-0.5915, 0.0718]],
 
 configReference = {
     'N': 1000,
-    'h': 5,
+    'h': 6,
     'dt': 0.1,
     'num_of_rand_points': 50,
     'noise_var': 0.0
