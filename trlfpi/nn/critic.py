@@ -30,7 +30,7 @@ class NNCritic(nn.Module):
     def value(self, x: torch.Tensor, actor: NNActor, nSamples: int = 200):
         values = []
         mu, std = actor(x)
-        actions = Normal(mu, std).sample([100]).reshape([-1, 1])
+        actions = Normal(mu, std).sample([nSamples]).reshape([-1, 1])
         qs = self.forward(torch.cat([actions, x.repeat_interleave(nSamples, dim=0)], axis=1))
-        values = qs.reshape([x.shape[0], 100]).mean(1, keepdim=True)
+        values = qs.reshape([x.shape[0], nSamples]).mean(1, keepdim=True)
         return values

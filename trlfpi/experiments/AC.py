@@ -28,8 +28,8 @@ if __name__ == '__main__':
     # NN params
     parser.add_argument("--c_lr", type=float, default=1e-5)
     parser.add_argument("--a_lr", type=float, default=1e-5)
-    parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--buffer_size", type=int, default=5000)
+    parser.add_argument("--batch_size", type=int, default=512)
+    parser.add_argument("--buffer_size", type=int, default=10000)
     parser.add_argument("--tau", type=float, default=5e-3)
     parser.add_argument("--update_freq", type=int, default=2)
     parser.add_argument("--aCost", type=float, default=0.0)
@@ -136,7 +136,7 @@ if __name__ == '__main__':
         # Advantage Q(a, s) - V(s)
         with torch.no_grad():
             qs = critic(torch.cat([actions, actorInput], axis=1))
-            vs = critic.value(actorInput, actor, nSamples=500)
+            vs = critic.value(actorInput, actor, nSamples=200)
             adv = qs - vs
 
         # Importance Weight
