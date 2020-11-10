@@ -6,7 +6,7 @@ do
     do
         for tau in 0.005 0.001
         do
-            python -m trlfpi.experiments.refTrackingAC --episodes 200 --nRefs $nRefs --discount $discount --tau $tau --c_lr 0.001 --a_lr 0.00005
+            python -m trlfpi.experiments.AC --episodes 200 --nRefs $nRefs --discount $discount --tau $tau --c_lr 0.001 --a_lr 0.00005
         done
     done
 done
