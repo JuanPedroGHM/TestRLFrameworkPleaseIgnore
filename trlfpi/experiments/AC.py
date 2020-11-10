@@ -136,7 +136,7 @@ if __name__ == '__main__':
         # Advantage Q(a, s) - V(s)
         with torch.no_grad():
             qs = critic(torch.cat([actions, actorInput], axis=1))
-            vs = critic.value(actorInput, actor, nSamples=100)
+            vs = critic.value(actorInput, actor, nSamples=500)
             adv = qs - vs
 
         # Importance Weight
@@ -196,9 +196,9 @@ if __name__ == '__main__':
 
             # Plot to see how it looks
         if systemPlots and episode % plot_freq == 0:
-            plotData = np.stack((states, refs, actions), axis=-1)
+            plotData = np.stack((actions, states, refs), axis=-1)
             report.savePlot(f"episode_{episode}_plot",
-                            ['State', 'Ref', 'Action'], plotData)
+                            ['Action', 'State', 'Ref'], plotData)
 
         print(f"Episode {episode}: Reward = {total_reward}, Critic_Loss = {total_c_loss}, Actor_Loss = {total_a_loss}")
         report.log('rewards', total_reward, episode)

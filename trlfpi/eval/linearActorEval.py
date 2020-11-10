@@ -70,9 +70,9 @@ if __name__ == "__main__":
 
             # Plot to see how it looks
             if args.plots:
-                plotData = np.stack((states, refs, actions), axis=-1)
+                plotData = np.stack((actions, states, refs), axis=-1)
                 report.savePlot(f"eval_{i}_plot",
-                                ['State', 'Ref', 'Actions'],
+                                ['Action', 'State', 'Ref'],
                                 plotData)
 
             print(f"Episode {i}: Reward = {total_reward}")
