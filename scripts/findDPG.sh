@@ -1,13 +1,7 @@
-#!/bin/sh
+#!/bin/bash
 REPORT=$1
 
-for nRefs in 1 2
+for x in {0..10}
 do
-    for tau in 0.001 0.0005
-    do
-        for aCost in 0.001 0.0001
-        do
-            python -m trlfpi.experiments.DPG $REPORT --episodes 100 --batch_size 1024 --c_lr 0.001 --a_lr 0.00005 --nRefs $nRefs --discount 0.7 --tau $tau --weightDecay 0.001 --aCost $aCost
-        done
-    done
+    python -m trlfpi.experiments.DPG $REPORT --episodes 200 --buffer_size 5000 --batch_size 512 --discount 0.7 --c_lr '1e-3' --a_lr '1e-5' --nRefs 1 --aCost '1e-3' --weightDecay '1e-3' --tau '1e-3'
 done

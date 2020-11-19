@@ -1,13 +1,7 @@
-#!/bin/sh
+#!/bin/bash
 REPORT=$1
 
-for nRefs in 1 2 3
+for x in {0..10}
 do
-    for aCost in 0 0.001 0.1 1
-    do
-        for WD in 0 0.001 0.1 1
-        do
-            python -m trlfpi.experiments.reinforce $REPORT --episodes 500 --a_lr '1e-5' --nRefs $nRefs --aCost $aCost --weightDecay $WD
-        done
-    done
+    python -m trlfpi.experiments.reinforce $REPORT --episodes 200 --buffer_size 5000 --batch_size 512 --discount 0.7 --a_lr '1e-5' --nRefs 1 --aCost '1e-3' --weightDecay '1e-3' 
 done

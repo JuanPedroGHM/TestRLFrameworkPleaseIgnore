@@ -70,45 +70,40 @@ if __name__ == '__main__':
 
     def updateActor():
 
-        actor_loss = 0
-        if replayBuff.size >= batch_size:
+        states, actions, log_probs, rewards, next_states, dones, refs = replayBuff.get(batchSize=batch_size)
 
-            states, actions, log_probs, rewards, next_states, dones, refs = replayBuff.get(batchSize=batch_size)
+        # Optimize actor
+        actorOptim.zero_grad()
 
-            # Optimize actor
-            actorOptim.zero_grad()
+        actorInput = torch.cat((states, refs[:, 1:nRefs + 1]), axis=1)
+        pActions, c_log_probs = actor.act(actorInput, sample=False, prevActions=actions)
 
-            actorInput = torch.cat((states, refs[:, 1:nRefs + 1]), axis=1)
-            pActions, c_log_probs = actor.act(actorInput, sample=False, prevActions=actions)
+        # Importance Weight
+        iw = torch.exp(c_log_probs - log_probs).detach() + 1e-9
+        adv = rewards - rewards.mean()
 
-            # Importance Weight
-            iw = torch.exp(c_log_probs - log_probs).detach() + 1e-9
-            adv = rewards - rewards.mean()
+        actor_loss = (-c_log_probs * adv * iw).mean()
+        actor_loss.backward()
+        actorOptim.step()
 
-            actor_loss = (-c_log_probs * adv * iw).mean()
-            actor_loss.backward()
-            actorOptim.step()
-
-        return actor_loss
+        return actor_loss.detach().cpu().numpy()
 
     bestScore = -1e6
 
     for episode in range(1, episodes + 1):
         state, ref = env.reset()
         total_reward = 0
+        total_actor_loss = 0
 
         states = []
         actions = []
         refs = []
 
         for step in range(max_episode_len):
-            # sample = (np.random.random() < epsilon)
-            sample = True
-
             # Take action
             with torch.no_grad():
                 actorInput = torch.tensor(np.hstack([state, ref[:, 1:nRefs + 1]]), device=device)
-                action, log_prob = actorTarget.act(actorInput, numpy=True, sample=sample)
+                action, log_prob = actorTarget.act(actorInput, numpy=True, sample=True)
 
             next_state, reward, done, next_ref = env.step(action)
             total_reward += reward
@@ -122,9 +117,9 @@ if __name__ == '__main__':
             replayBuff.add(list(map(lambda x: torch.tensor(x, device=device),
                            [state, action, log_prob, reward, next_state, int(done), ref])))
 
-            actor_loss = updateActor()
-            if actor_loss != 0:
-                report.log('actorLoss', actor_loss)
+            if replayBuff.size >= batch_size:
+                actor_loss = updateActor()
+                total_actor_loss += actor_loss
 
             if done:
                 break
@@ -133,21 +128,22 @@ if __name__ == '__main__':
             ref = next_ref
 
         # Plot to see how it looks
-        if total_reward > bestScore:
-            bestScore = total_reward
-            report.pickle('actor_best', actor.state_dict())
-
         if systemPlots and episode % plot_freq == 0:
             plotData = np.stack((states, refs, actions), axis=-1)
             report.savePlot(f"episode_{episode}_plot",
                             ['State', 'Ref', 'Actions'],
                             plotData)
 
+        print(f"Episode {episode}: Reward = {total_reward}, Actor Loss = {total_actor_loss}")
+        report.log('rewards', total_reward, episode)
+        report.log('actorLoss', total_actor_loss, episode)
+
+        if total_reward > bestScore:
+            bestScore = total_reward
+            report.pickle('actor_best', actorTarget.state_dict())
+
         if episode % update_freq == 0:
             actorTarget.load_state_dict(actor.state_dict())
-
-        print(f"Episode {episode}: Reward = {total_reward}")
-        report.log('rewards', total_reward, episode)
 
     report.generateReport()
     report.pickle('actor_cp', actor.state_dict())

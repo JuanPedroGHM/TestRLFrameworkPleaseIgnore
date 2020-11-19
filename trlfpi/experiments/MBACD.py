@@ -163,7 +163,7 @@ if __name__ == '__main__':
             for targetP, oP in zip(actorTarget.parameters(), actor.parameters()):
                 targetP = (1 - tau) * targetP + tau * oP
 
-        return c_loss, a_loss
+        return c_loss.detach().cpu().numpy(), a_loss.detach().cpu().numpy()
 
     bestScore = -1e9
     for episode in range(1, episodes + 1):
