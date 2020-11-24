@@ -1,1 +1,2 @@
-from trlfpi.envs.linearSystemEnv import LinearSystemEnv
+from trlfpi.envs.linearGym import LinearEnv
+from trlfpi.envs.clutchGym import ClutchEnv
