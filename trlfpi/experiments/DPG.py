@@ -17,23 +17,21 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("report", type=str)
     parser.add_argument("--env", type=str, default="linear-with-ref-v0")
-    parser.add_argument("--cpus", type=int, default=1)
 
     # Env params
     parser.add_argument("--episodes", type=int, default=100)
-    parser.add_argument("--max_episode_len", type=int, default=1000)
     parser.add_argument("--nRefs", type=int, default=1)
     parser.add_argument("--discount", type=float, default=0.7)
 
     # NN params
-    parser.add_argument("--c_lr", type=float, default=1e-5)
+    parser.add_argument("--c_lr", type=float, default=1e-3)
     parser.add_argument("--a_lr", type=float, default=1e-5)
-    parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--batch_size", type=int, default=512)
     parser.add_argument("--buffer_size", type=int, default=5000)
-    parser.add_argument("--tau", type=float, default=5e-3)
+    parser.add_argument("--tau", type=float, default=1e-3)
     parser.add_argument("--update_freq", type=int, default=2)
-    parser.add_argument("--aCost", type=float, default=0.0)
-    parser.add_argument("--weightDecay", type=float, default=0.0)
+    parser.add_argument("--aCost", type=float, default=1e-3)
+    parser.add_argument("--weightDecay", type=float, default=1e-3)
 
     # Plot args
     parser.add_argument("--plots", action='store_true')
@@ -45,10 +43,7 @@ if __name__ == '__main__':
     # SETUP ARGUMENTS
     args = parser.parse_args()
 
-    cpus = args.cpus
-
     episodes = args.episodes
-    max_episode_len = args.max_episode_len
     nRefs = args.nRefs
     discount = args.discount
     aCost = args.aCost
@@ -72,8 +67,9 @@ if __name__ == '__main__':
     report.logArgs(args.__dict__)
 
     # Setup
-    env = gym.make(args.env)
-    env.alpha = aCost
+    # During training, one more value is needed for TD
+    neededReferenceSize = 1 + nRefs + 1
+    env = gym.make(args.env, horizon=nRefs + 1, deltaActionCost=aCost)
 
     # Init policy networks
     actor = NNActor(2 + nRefs, 1,
@@ -151,17 +147,23 @@ if __name__ == '__main__':
     bestScore = -1e9
     for episode in range(1, episodes + 1):
         state, ref = env.reset()
+        done = False
         total_reward = 0
         total_c_loss = 0
         total_a_loss = 0
+        step = 0
 
         states = []
         refs = []
         actions = []
 
-        for step in range(max_episode_len):
+        while not done:
             # Take action
             with torch.no_grad():
+                # Pad reference in case at the end of the episode
+                if ref.shape[1] < neededReferenceSize:
+                    ref = np.pad(ref, ((0, 0), (0, neededReferenceSize - ref.shape[1])), mode='edge')
+
                 actorInput = torch.tensor(np.hstack([state, ref[:, 1:nRefs + 1]]), device=device)
                 action, _ = actor.act(actorInput, numpy=True, sample=True)
             next_state, reward, done, next_ref = env.step(action)
@@ -185,6 +187,7 @@ if __name__ == '__main__':
 
             state = next_state
             ref = next_ref
+            step += 1
 
             # Plot to see how it looks
         if systemPlots and episode % plot_freq == 0:

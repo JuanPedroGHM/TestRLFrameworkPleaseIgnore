@@ -71,7 +71,7 @@ class ClutchEnv(gym.Env):
 
         reward = stateCost + self.deltaActionCost * actionCost
 
-        self.done = np.any(done) or self.k == ClutchEnv.N
+        self.done = np.any(done) or self.k == ClutchEnv.N - 1
 
         lastIndex = self.k + 1 + self.h if self.k + 1 + self.h < ClutchEnv.N else -1
         r = self.ref[:, self.k:lastIndex] if not done else None

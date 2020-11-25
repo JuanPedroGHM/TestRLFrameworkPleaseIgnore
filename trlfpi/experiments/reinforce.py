@@ -12,18 +12,21 @@ torch.set_default_dtype(torch.double)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("experiment", type=str)
+    parser.add_argument("report", type=str)
+
+    # Env params
     parser.add_argument("--env", type=str, default="linear-with-ref-v0")
+    parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--nRefs", type=int, default=1)
-    parser.add_argument("--aCost", type=float, default=0.0)
-    parser.add_argument("--a_lr", type=float, default=1e-3)
-    parser.add_argument("--discount", type=float, default=0.3)
-    parser.add_argument("--episodes", type=int, default=200)
-    parser.add_argument("--max_episode_len", type=int, default=1000)
+    parser.add_argument("--aCost", type=float, default=1e-3)
+
+    # Agent params
+    parser.add_argument("--a_lr", type=float, default=1e-5)
+    parser.add_argument("--discount", type=float, default=0.7)
     parser.add_argument("--buffer_size", type=int, default=5000)
-    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--batch_size", type=int, default=512)
     parser.add_argument("--update_freq", type=int, default=1)
-    parser.add_argument("--weightDecay", type=float, default=0.0)
+    parser.add_argument("--weightDecay", type=float, default=1e-3)
     parser.add_argument("--plots", action='store_true')
     parser.add_argument("--plot_freq", type=int, default=10)
 
@@ -35,7 +38,6 @@ if __name__ == '__main__':
     discount = args.discount
     a_lr = args.a_lr
     episodes = args.episodes
-    max_episode_len = args.max_episode_len
     batch_size = args.batch_size
     buffer_size = args.buffer_size
     update_freq = args.update_freq
@@ -46,12 +48,11 @@ if __name__ == '__main__':
     plot_freq = args.plot_freq
 
     # Report
-    report = Report(args.experiment)
+    report = Report(args.report)
     report.logArgs(args.__dict__)
 
     # Setup
-    env = gym.make(args.env)
-    env.alpha = aCost
+    env = gym.make(args.env, horizon=nRefs, deltaActionCost=aCost)
 
     # Smaller net
     # Init policy network
@@ -92,16 +93,19 @@ if __name__ == '__main__':
 
     for episode in range(1, episodes + 1):
         state, ref = env.reset()
+        done = False
         total_reward = 0
         total_actor_loss = 0
+        step = 0
 
         states = []
         actions = []
         refs = []
 
-        for step in range(max_episode_len):
+        while not done:
             # Take action
             with torch.no_grad():
+                # Pad ref at the end of the episode
                 actorInput = torch.tensor(np.hstack([state, ref[:, 1:nRefs + 1]]), device=device)
                 action, log_prob = actorTarget.act(actorInput, numpy=True, sample=True)
 
@@ -126,6 +130,7 @@ if __name__ == '__main__':
 
             state = next_state
             ref = next_ref
+            step += 1
 
         # Plot to see how it looks
         if systemPlots and episode % plot_freq == 0:
