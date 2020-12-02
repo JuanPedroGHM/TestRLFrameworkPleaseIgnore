@@ -23,7 +23,7 @@ class ClutchEnv(gym.Env):
 
     # Refs settings
     referenceValue = 209  # in Hz
-    N = 800
+    N = 100
     numrandref = 8
     noise_variance_ref = 0.0
 
@@ -73,7 +73,7 @@ class ClutchEnv(gym.Env):
 
         self.done = np.any(done) or self.k == ClutchEnv.N - 1
 
-        lastIndex = self.k + 1 + self.h if self.k + 1 + self.h < ClutchEnv.N else -1
+        lastIndex = self.k + 1 + self.h if self.k + 1 + self.h < ClutchEnv.N else None
         r = self.ref[:, self.k:lastIndex] if not done else None
 
         return next_state, reward, self.done, r

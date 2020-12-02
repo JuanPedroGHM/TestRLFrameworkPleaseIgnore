@@ -14,6 +14,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("experimentName")
     parser.add_argument("reportId")
+    parser.add_argument("env")
     parser.add_argument("--nTests", type=int, default=10)
     parser.add_argument("--episodeLength", type=int, default=1000)
     parser.add_argument("--sample", action='store_true')
@@ -38,7 +39,7 @@ if __name__ == "__main__":
 
     results = []
 
-    env = gym.make("linear-with-ref-v0")
+    env = gym.make(args.env, horizon=nRefs)
 
     with torch.no_grad():
         for i in range(args.nTests):
@@ -50,6 +51,9 @@ if __name__ == "__main__":
             refs = []
 
             for step in range(args.episodeLength):
+
+                if ref.shape[1] < nRefs + 1:
+                    ref = np.pad(ref, ((0, 0), (0, nRefs + 1 - ref.shape[1])), mode='edge')
 
                 actorInput = torch.tensor(np.hstack([state, ref[:, 1:nRefs + 1]]), device=device)
                 action, _ = actor.act(actorInput, numpy=True, sample=args.sample)
@@ -70,9 +74,9 @@ if __name__ == "__main__":
 
             # Plot to see how it looks
             if args.plots:
-                plotData = np.stack((actions, states, refs), axis=-1)
+                plotData = np.stack((states, refs), axis=-1)
                 report.savePlot(f"eval_{i}_plot",
-                                ['Action', 'State', 'Ref'],
+                                ['State', 'Ref'],
                                 plotData)
 
             print(f"Episode {i}: Reward = {total_reward}")

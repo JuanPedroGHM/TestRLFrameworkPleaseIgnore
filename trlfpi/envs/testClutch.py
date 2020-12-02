@@ -41,7 +41,7 @@ class PID(object):
 
 
 if __name__ == '__main__':
-    env = gym.make('clutch-v0', horizon=3, deltaActionCost=0.0)
+    env = gym.make('clutch-v0', horizon=1, deltaActionCost=0.0)
     print(env.h)
     print(env.deltaActionCost)
 

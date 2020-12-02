@@ -68,7 +68,7 @@ class LinearEnv(gym.Env):
         reward = - (stateCost + self.alpha * actionCost)
         self.done = self.k == LinearEnv.N - 1
 
-        lastIndex = self.k + self.h + 1 if self.k + self.h + 1 < LinearEnv.N else -1
+        lastIndex = self.k + self.h + 1 if self.k + self.h + 1 < LinearEnv.N else None
         r = self.ref[:, self.k:lastIndex] if not self.done else None
 
         return self.state, reward, self.done, r

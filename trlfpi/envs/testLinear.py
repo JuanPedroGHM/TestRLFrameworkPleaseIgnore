@@ -26,6 +26,8 @@ if __name__ == '__main__':
     refs = []
 
     while not done:
+        if ref.shape[1] < 5 + 1:
+            ref = np.pad(ref, ((0, 0), (0, 5 + 1 - ref.shape[1])), mode='edge')
         u = controller(state, ref).reshape((1, 1))
         next_state, reward, done, next_ref = env.step(u)
 
