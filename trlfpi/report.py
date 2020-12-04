@@ -13,42 +13,38 @@ import matplotlib.pyplot as plt
 
 class Report():
 
-    def __init__(self, reportName: str, reportId: str = None, tensorboard=True):
+    def __init__(self, reportPath: str, tensorboard=True):
 
         self.tensorboard = tensorboard
-        self.path: pathlib.Path = pathlib.Path("results") / reportName
-        if not self.path.exists():
-            self.path.mkdir()
+        self.reportPath: pathlib.Path = pathlib.Path(reportPath)
+        if not self.reportPath.exists():
+            self.reportPath.mkdir()
 
-        if not reportId:
-            reportId = reduce(lambda x, y: x + 1, self.path.iterdir(), 0)
-            self.path = self.path / str(reportId)
-        else:
-            self.path = self.path / reportId
-
-        if not self.path.exists():
-            self.path.mkdir()
+    def new(self):
+        reportId = str(reduce(lambda x, y: x + 1, self.reportPath.iterdir(), 0))
+        self.path = self.reportPath / reportId
+        self.path.mkdir()
 
         self.plotsPath = self.path / 'plots'
-        if not self.plotsPath.exists():
-            self.plotsPath.mkdir()
+        self.plotsPath.mkdir()
 
         self.picklePath = self.path / 'pickle'
-        if not self.picklePath.exists():
-            self.picklePath.mkdir()
+        self.picklePath.mkdir()
 
         if self.tensorboard:
             self.writer = SummaryWriter(f"{self.path / 'tensorboard'}")
 
         self.variables = {}
 
+    def id(self, id: int):
+        self.path = self.reportPath / str(id)
+        self.plotsPath = self.path / 'plots'
+        self.picklePath = self.path / 'pickle'
+        self.variables = self.unpickle('variables')
+
     def logArgs(self, argsDict: Dict):
         with open(self.path / 'args.json', 'w+') as f:
             json.dump(argsDict, f, indent=4)
-
-    def getArgs(self):
-        with open(self.path / 'args.json', 'r') as f:
-            return json.load(f)
 
     def log(self, name: str, value, step=None):
         if name in self.variables.keys():
@@ -73,6 +69,7 @@ class Report():
             pickle.dump(self.variables, f)
 
         for key, values in self.variables.items():
+
             if len(values) == 2:
                 self.savePlot(key, key, np.array([values[0]]).T, values[1])
             else:

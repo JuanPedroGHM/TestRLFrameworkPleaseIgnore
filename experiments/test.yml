@@ -1,0 +1,21 @@
+report:
+  path: './results/test'
+
+trainer:
+  episodes: 10
+  maxEpisodeLenght: 1000
+  evalFreq: 5
+  plot: True
+  plotAction: True
+
+
+agent:
+  name: 'random'
+  mean: 1.0
+
+env:
+  name: 'linear-with-ref-v0'
+  args:
+    horizon: 5
+    deltaActionCost: 0.001
+
