@@ -71,6 +71,10 @@ class LinearEnv(gym.Env):
         lastIndex = self.k + self.h + 1 if self.k + self.h + 1 < LinearEnv.N else None
         r = self.ref[:, self.k:lastIndex] if not self.done else None
 
+        # Pad the reference in case there are not enough points
+        if r is not None and r.shape[1] < self.h + 1:
+            r = np.pad(r, ((0, 0), (0, self.h + 1 - r.shape[1])), mode='edge')
+
         return self.state, reward, self.done, r
 
     def system(self, state, action, gpu=False):

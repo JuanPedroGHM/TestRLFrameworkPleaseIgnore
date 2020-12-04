@@ -23,7 +23,7 @@ class Trainer():
         self.agent = agent
         self.env = env
 
-        bestScore = -1e-9
+        bestScore = -1e9
         for episode in range(1, self.config['episodes'] + 1):
             agent.train()
             epsReward, epsAgentLoss, states, actions, refs = self.episode()
@@ -54,7 +54,7 @@ class Trainer():
         self.report.pickle('agent_cp', agent.toDict())
 
     def recordEpisodeScore(self, episode, epsReward, epsAgentLoss, eval=False):
-        agentLossStr = reduce(lambda final, current: final + f", {current[0]} = {current[1]}", epsAgentLoss, '')
+        agentLossStr = reduce(lambda final, current: final + f", {current[0]} = {current[1]}", epsAgentLoss.items(), '')
         if eval:
             print(f"Eval {episode}: Reward = {epsReward}" + agentLossStr)
             self.report.log('eval_reward', epsReward, episode)
@@ -95,9 +95,8 @@ class Trainer():
                                                 action,
                                                 log_prob,
                                                 reward,
-                                                done,
-                                                next_state,
-                                                next_ref])
+                                                int(done),
+                                                next_state])
                 for key in agent_loss:
                     epsAgentLoss[key] = agent_loss[key] + epsAgentLoss[key] if key in epsAgentLoss else agent_loss[key]
 
@@ -109,3 +108,25 @@ class Trainer():
             step += 1
 
         return epsReward, epsAgentLoss, states, actions, refs
+
+    def test(self, report: Report, agent: Agent, env: gym.Env, tests: int = 10):
+        self.report = report
+        self.agent = agent
+        self.env = env
+
+        for i in range(tests):
+            agent.eval()
+            epsReward, epsAgentLoss, states, actions, refs = self.episode(eval=True)
+            print(f"Test {i}: Reward = {epsReward}")
+            self.report.log('test_reward', epsReward)
+
+            if self.config['plotAction']:
+                plotData = np.stack((states, refs, actions), axis=-1)
+                self.report.savePlot(f"test_{i}_plot",
+                                     ['State', 'Ref', 'Actions'],
+                                     plotData)
+            else:
+                plotData = np.stack((states, refs), axis=-1)
+                self.report.savePlot(f"test_{i}_plot",
+                                     ['State', 'Ref'],
+                                     plotData)

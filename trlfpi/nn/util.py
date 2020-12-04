@@ -3,28 +3,35 @@ from torch import nn
 
 from typing import List
 
+activationFunctions: dict = {
+    'relu': nn.ReLU,
+    'identity': nn.Identity,
+    'tahn': nn.Tanh,
+    'sigmoid': nn.Sigmoid
+}
+
 
 def init_weights(m):
     if type(m) == nn.Linear:
         torch.nn.init.xavier_uniform_(m.weight)
 
 
-def mlp(layers: List[int], activation: nn.Module = nn.ReLU, dropout=False, batchNorm=False, outputActivation: nn.Module = torch.nn.Identity) -> nn.Module:
-    model = []
+def mlp(layers: List[int], activations: List[str], dropout=False, batchNorm=False) -> nn.Module:
+    moduleList: List = []
     lastOutputSize = layers[0]
     for index, layerSize in enumerate(layers[1:]):
         if index < len(layers) - 2:
-            model.append(nn.Linear(lastOutputSize, layerSize))
+            moduleList.append(nn.Linear(lastOutputSize, layerSize))
             if batchNorm:
-                model.append(nn.LayerNorm(layerSize))
-            model.append(activation())
+                moduleList.append(nn.LayerNorm(layerSize))
+            moduleList.append(activationFunctions[activations[index]]())
             if dropout:
-                model.append(nn.Dropout())
+                moduleList.append(nn.Dropout())
             lastOutputSize = layerSize
         else:
-            model.append(nn.Linear(lastOutputSize, layerSize))
-            model.append(outputActivation())
-    model = nn.Sequential(*model)
+            moduleList.append(nn.Linear(lastOutputSize, layerSize))
+            moduleList.append(activationFunctions[activations[index]]())
+    model = nn.Sequential(*moduleList)
     model.apply(init_weights)
 
     return model

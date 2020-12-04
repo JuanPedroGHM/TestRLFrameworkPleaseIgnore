@@ -13,7 +13,7 @@ class RandomAgent(Agent):
         'seed': None
     }
 
-    def setup(self, checkpoint: dict = None, gpu: bool = False):
+    def setup(self, checkpoint: dict = None, device: str = 'cpu'):
         np.random.seed(self.config['seed'])
 
     def act(self, state: np.ndarray, ref: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:

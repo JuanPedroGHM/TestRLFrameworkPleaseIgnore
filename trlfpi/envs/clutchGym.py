@@ -76,6 +76,10 @@ class ClutchEnv(gym.Env):
         lastIndex = self.k + 1 + self.h if self.k + 1 + self.h < ClutchEnv.N else None
         r = self.ref[:, self.k:lastIndex] if not done else None
 
+        # Pad the reference in case there are not enough points
+        if r is not None and r.shape[1] < self.h + 1:
+            r = np.pad(r, ((0, 0), (0, self.h + 1 - r.shape[1])), mode='edge')
+
         return next_state, reward, self.done, r
 
     def reset(self):

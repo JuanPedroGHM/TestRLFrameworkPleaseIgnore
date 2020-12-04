@@ -31,7 +31,7 @@ class Agent(abc.ABC):
         self.mode = 'eval'
 
     @abc.abstractmethod
-    def setup(self, checkpoint: dict = None, gpu: bool = False):
+    def setup(self, checkpoint: dict = None, device: str = 'cpu'):
         pass
 
     @abc.abstractmethod
@@ -45,7 +45,7 @@ class Agent(abc.ABC):
 
         Parameters:
         stepData (list): List with the data from last step in this order.
-                         [state, ref, action, log_prob, reward, done, next_state, next_ref]
+                         [state, ref, action, log_prob, reward, done, next_state]
 
         Returns:
         dict: Dictionary with any losses during training.

@@ -20,7 +20,10 @@ class Report():
         if not self.reportPath.exists():
             self.reportPath.mkdir()
 
-    def new(self):
+    def listExisting(self) -> List[int]:
+        return list(map(lambda x: int(x.name), self.reportPath.iterdir()))
+
+    def new(self) -> int:
         reportId = str(reduce(lambda x, y: x + 1, self.reportPath.iterdir(), 0))
         self.path = self.reportPath / reportId
         self.path.mkdir()
@@ -34,13 +37,16 @@ class Report():
         if self.tensorboard:
             self.writer = SummaryWriter(f"{self.path / 'tensorboard'}")
 
-        self.variables = {}
+        self.variables: dict = {}
+        return int(reportId)
 
     def id(self, id: int):
         self.path = self.reportPath / str(id)
         self.plotsPath = self.path / 'plots'
         self.picklePath = self.path / 'pickle'
         self.variables = self.unpickle('variables')
+        if self.tensorboard:
+            self.writer = SummaryWriter(f"{self.path / 'tensorboard'}")
 
     def logArgs(self, argsDict: Dict):
         with open(self.path / 'args.json', 'w+') as f:
