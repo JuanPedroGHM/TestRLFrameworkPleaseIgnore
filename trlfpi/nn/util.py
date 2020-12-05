@@ -2,12 +2,14 @@ import torch
 from torch import nn
 
 from typing import List
+from .activation import InvertedRELU
 
 activationFunctions: dict = {
     'relu': nn.ReLU,
     'identity': nn.Identity,
     'tahn': nn.Tanh,
-    'sigmoid': nn.Sigmoid
+    'sigmoid': nn.Sigmoid,
+    'invRelu': InvertedRELU
 }
 
 

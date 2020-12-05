@@ -5,29 +5,19 @@ from torch import nn
 from typing import List
 
 from .util import mlp
-from .actor import NNActor
+from .stochasticActor import StochasticActor
 
 
-class NNCritic(nn.Module):
+class QFunc(nn.Module):
 
-    def __init__(self, input_space: int,
-                 hidden: List[int],
-                 activation: nn.Module = nn.ReLU,
-                 outputActivation: nn.Module = nn.Identity):
-
-        super(NNCritic, self).__init__()
-
-        layers = [input_space] + hidden + [1]
-        self.layers = mlp(layers,
-                          activation=activation,
-                          outputActivation=outputActivation,
-                          batchNorm=True,
-                          dropout=True)
+    def __init__(self, layerSizes: List[int], layerActivations: List[str]):
+        super(QFunc, self).__init__()
+        self.layers = mlp(layerSizes, layerActivations, batchNorm=True, dropout=True)
 
     def forward(self, x: torch.Tensor):
         return self.layers(x)
 
-    def value(self, x: torch.Tensor, actor: NNActor, nSamples: int = 200):
+    def value(self, x: torch.Tensor, actor: StochasticActor, nSamples: int = 200):
         values = []
         mu, std = actor(x)
         actions = Normal(mu, std).sample([nSamples]).reshape([-1, 1])
