@@ -1,0 +1,7 @@
+version: '3.8'
+services:
+  trlfpi:
+    image: trlfpi
+    container_name: trlfpi
+    volumes:
+      - .:/code

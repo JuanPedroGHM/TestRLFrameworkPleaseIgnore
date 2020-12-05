@@ -17,30 +17,28 @@ To work locally without docker, the following cmd can be used to create a conda 
 conda env create -f environment.yml
 ```
 
-## Usage
+## TestRLFrameworkPleaseIgnore cli
+
+1) Create experiment file (see experiments/test.yml)
+
+2) To train model (5 times of 1 by default)
+
+    ```trlfpi -c experiments/test.yml train -n 5```
+
+3) To test the model
+
+    ```trlfpi -c experiments/test.yml test```
+
+## Usage with docker
 
 Different files are provided depending on the task.
 
-1) interactive.sh : If you want to open a shell on the container
+1) Using docker compose (gpus not supported)
 
-2) run_experiment.sh : Runs a python module on the cpu, can be any file inside trlfpi dir
+    ``` docker-compose run --rm trlfpi -c experiments/test.yml train -n 2  ```
 
-    ``` ./run_experiment.sh experiments.refTrackingPG '--nRefs 1 --plots' ```
+1) Using run_trlfpi_gpu.sh to run on the gpu (if available):
 
-3) run_gpu_exp.sh : Same as run_experiment.sh, but a gpu can be specified
-
-    ``` ./run_gpu_exp.sh 0 experiments.refTrackingPG '--nRefs 1 --plots' ```
-
-4) To run an experiment outside the docker container, use the following cmd format
-
-    ``` python -m trlfpi.experiments.refTrackingPG --nRefs 1 --plots ```
+    ``` ./run_trflfpi_gpu.sh 0 -c experiments/test.yml train -n 2 ```
 
 ## Experiments
-
-#### refTrackingPG
-
-#### refTrackingAC
-
-#### refTrackingACD
-
-#### refTrackingDGPQ
