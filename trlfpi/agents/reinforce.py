@@ -18,6 +18,7 @@ class REINFORCE(Agent):
         # Network
         'layers': [3, 64, 64, 1],
         'activation': ['tahn', 'tahn', 'identity'],
+        'layerOptions': None,
         'a_lr': 1e-5,
         'weightDecay': 1e-3,
         'batchSize': 512,
@@ -32,8 +33,8 @@ class REINFORCE(Agent):
             self.config = checkpoint['config']
 
         self.device = device
-        self.actor = StochasticActor(self.config['layers'], self.config['activation']).to(device)
-        self.actorTarget = StochasticActor(self.config['layers'], self.config['activation']).to(device)
+        self.actor = StochasticActor(self.config['layers'], self.config['activation'], self.config['layerOptions']).to(device)
+        self.actorTarget = StochasticActor(self.config['layers'], self.config['activation'], self.config['layerOptions']).to(device)
         if checkpoint:
             self.actor.load_state_dict(checkpoint['actor'])
 

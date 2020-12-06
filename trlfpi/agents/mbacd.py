@@ -20,11 +20,13 @@ class MBACD(Agent):
         # Policy Network
         'a_layers': [2, 64, 64, 1],
         'a_activation': ['tahn', 'tahn', 'identity'],
+        'a_layerOptions': None,
         'a_lr': 1e-5,
 
         # Critic Network
         'c_layers': [5, 64, 64, 1],
         'c_activation': ['tahn', 'tahn', 'invRelu'],
+        'c_layerOptions': None,
         'c_lr': 1e-3,
 
         'tau': 1e-3,
@@ -44,8 +46,8 @@ class MBACD(Agent):
             self.config = checkpoint['config']
 
         self.device = device
-        self.actor = StochasticActor(self.config['a_layers'], self.config['a_activation']).to(device)
-        self.actorTarget = StochasticActor(self.config['a_layers'], self.config['a_activation']).to(device)
+        self.actor = StochasticActor(self.config['a_layers'], self.config['a_activation'], self.config['a_layerOptions']).to(device)
+        self.actorTarget = StochasticActor(self.config['a_layers'], self.config['a_activation'], self.config['a_layerOptions']).to(device)
         if checkpoint:
             self.actor.load_state_dict(checkpoint['actor'])
             self.actorTarget.load_state_dict(checkpoint['actorTarget'])
@@ -58,8 +60,8 @@ class MBACD(Agent):
                                            lr=self.config['a_lr'],
                                            weight_decay=self.config['weightDecay'])
 
-        self.critic = QFunc(self.config['c_layers'], self.config['c_activation']).to(device)
-        self.criticTarget = QFunc(self.config['c_layers'], self.config['c_activation']).to(device)
+        self.critic = QFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
+        self.criticTarget = QFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
         if checkpoint:
             self.critic.load_state_dict(checkpoint['critic'])
             self.criticTarget.load_state_dict(checkpoint['criticTarget'])

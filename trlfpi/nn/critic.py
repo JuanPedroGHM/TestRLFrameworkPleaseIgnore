@@ -10,9 +10,9 @@ from .stochasticActor import StochasticActor
 
 class QFunc(nn.Module):
 
-    def __init__(self, layerSizes: List[int], layerActivations: List[str]):
+    def __init__(self, layerSizes: List[int], layerActivations: List[str], layerOptions: List[dict] = None):
         super(QFunc, self).__init__()
-        self.layers = mlp(layerSizes, layerActivations, batchNorm=True, dropout=True)
+        self.layers = mlp(layerSizes, layerActivations, layerOptions, batchNorm=True, dropout=True)
 
     def forward(self, x: torch.Tensor):
         return self.layers(x)

@@ -7,11 +7,12 @@ from .util import mlp
 
 class DeterministicActor(nn.Module):
 
-    def __init__(self, layerSizes: List[int], layerActivations: List[str]):
+    def __init__(self, layerSizes: List[int], layerActivations: List[str], layerOptions: List[dict] = None):
 
         super(DeterministicActor, self).__init__()
         self.mu = mlp(layerSizes,
-                      layerActivations)
+                      layerActivations,
+                      layerOptions)
 
     def forward(self, obs):
         mu = self.mu(obs)

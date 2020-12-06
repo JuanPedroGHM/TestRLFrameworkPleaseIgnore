@@ -9,17 +9,29 @@ from .util import mlp
 
 class StochasticActor(nn.Module):
 
-    def __init__(self, layerSizes: List[int], layerActivations: List[str]):
+    def __init__(self, layerSizes: List[int], layerActivations: List[str], layerOptions: List[dict] = None):
 
         super(StochasticActor, self).__init__()
-        self.encoder = mlp(layerSizes[:-1],
-                           layerActivations[:-1],
-                           batchNorm=True,
-                           dropout=True)
-        self.mu = mlp(layerSizes[-2:],
-                      layerActivations[-1:])
-        self.sigma = mlp(layerSizes[-2:],
-                         ['relu'])
+        if not layerOptions:
+            self.encoder = mlp(layerSizes[:-1],
+                               layerActivations[:-1],
+                               batchNorm=True,
+                               dropout=True)
+            self.mu = mlp(layerSizes[-2:],
+                          layerActivations[-1:])
+            self.sigma = mlp(layerSizes[-2:],
+                             ['relu'])
+        else:
+            self.encoder = mlp(layerSizes[:-1],
+                               layerActivations[:-1],
+                               layerOptions[:-1],
+                               batchNorm=True,
+                               dropout=True)
+            self.mu = mlp(layerSizes[-2:],
+                          layerActivations[-1:],
+                          layerOptions[-1:])
+            self.sigma = mlp(layerSizes[-2:],
+                             ['relu'])
 
     def forward(self, obs):
         z = self.encoder(obs)
