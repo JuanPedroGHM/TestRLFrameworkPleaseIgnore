@@ -12,7 +12,9 @@ class DeterministicActor(nn.Module):
         super(DeterministicActor, self).__init__()
         self.mu = mlp(layerSizes,
                       layerActivations,
-                      layerOptions)
+                      layerOptions,
+                      batchNorm=True,
+                      dropout=True)
 
     def forward(self, obs):
         mu = self.mu(obs)

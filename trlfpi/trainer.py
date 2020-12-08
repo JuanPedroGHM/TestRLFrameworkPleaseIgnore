@@ -39,15 +39,14 @@ class Trainer():
                     report.pickle('agent_best', agent.toDict())
 
                 if self.config['plot']:
+                    plotData = np.stack((states, refs), axis=-1)
+                    self.report.savePlot(f"episode_{episode}_plot",
+                                         ['State', 'Ref'],
+                                         plotData)
                     if self.config['plotAction']:
-                        plotData = np.stack((states, refs, actions), axis=-1)
-                        self.report.savePlot(f"episode_{episode}_plot",
-                                             ['State', 'Ref', 'Actions'],
-                                             plotData)
-                    else:
-                        plotData = np.stack((states, refs), axis=-1)
-                        self.report.savePlot(f"episode_{episode}_plot",
-                                             ['State', 'Ref'],
+                        plotData = np.stack((actions), axis=-1).reshape(len(actions), 1)
+                        self.report.savePlot(f"episode_{episode}_act_plot",
+                                             ['Actions'],
                                              plotData)
 
         self.report.generateReport()

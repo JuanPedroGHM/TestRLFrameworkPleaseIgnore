@@ -33,16 +33,14 @@ def mlp(layers: List[int], activations: List[str], layerOptions: List[dict] = No
                 moduleList.append(nn.LayerNorm(layerSize))
             moduleList.append(activationFunctions[activations[index]]())
             if dropout:
-                moduleList.append(nn.Dropout())
+                moduleList.append(nn.Dropout(p=0.2))
             lastOutputSize = layerSize
         else:
             layer = nn.Linear(lastOutputSize, layerSize)
             if layerOptions:
                 options = layerOptions[index]
-                print(layer.bias)
                 if 'bias' in options:
                     layer.bias = nn.Parameter(torch.tensor([options['bias']]), requires_grad=True)
-                    print(layer.bias)
             moduleList.append(layer)
             moduleList.append(activationFunctions[activations[index]]())
     model = nn.Sequential(*moduleList)
