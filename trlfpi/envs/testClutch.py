@@ -82,6 +82,12 @@ if __name__ == '__main__':
     plt.legend()
     plt.show()
 
+    plt.plot(actions, '-', label='actions')
+    plt.xlabel('n')
+    plt.ylabel('actions')
+    plt.legend()
+    plt.show()
+
     plt.plot(states[:, 0] * 60 / 2 / np.pi, '+', label='omega_in')
     plt.plot(env.gamma * states[:, 1] * 60 / 2 / np.pi, 'x', label='gamma*omega_out')
     plt.plot(refs[:, 1] * 60 / 2 / np.pi, '--', label='reference')

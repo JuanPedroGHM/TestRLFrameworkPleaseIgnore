@@ -23,6 +23,7 @@ class REINFORCE(Agent):
         'weightDecay': 1e-3,
         'batchSize': 512,
         'update_freq': 1000,
+        'explorationNoise': 1.0,
 
         # ReplayBuffer
         'bufferSize': 10000
@@ -33,8 +34,14 @@ class REINFORCE(Agent):
             self.config = checkpoint['config']
 
         self.device = device
-        self.actor = StochasticActor(self.config['layers'], self.config['activation'], self.config['layerOptions']).to(device)
-        self.actorTarget = StochasticActor(self.config['layers'], self.config['activation'], self.config['layerOptions']).to(device)
+        self.actor = StochasticActor(self.config['layers'],
+                                     self.config['activation'],
+                                     self.config['layerOptions'],
+                                     explorationNoise=self.config['explorationNoise']).to(device)
+        self.actorTarget = StochasticActor(self.config['layers'],
+                                           self.config['activation'],
+                                           self.config['layerOptions'],
+                                           explorationNoise=self.config['explorationNoise']).to(device)
         if checkpoint:
             self.actor.load_state_dict(checkpoint['actor'])
 

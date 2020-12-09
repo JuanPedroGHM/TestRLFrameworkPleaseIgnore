@@ -6,7 +6,7 @@ from torch.distributions import Normal
 from .agent import Agent
 from ..memory import GymMemory
 from ..nn.stochasticActor import StochasticActor
-from ..nn.critic import QFunc
+from ..nn.critic import VFunc
 
 
 @Agent.register("ppo")
@@ -43,27 +43,21 @@ class PPO(Agent):
     }
 
     def setup(self, checkpoint: dict = None, device: str = 'cpu'):
-        print(self.config)
         if checkpoint:
             self.config = checkpoint['config']
 
         self.device = device
         self.actor = StochasticActor(self.config['a_layers'], self.config['a_activation'], self.config['a_layerOptions']).to(device)
-        self.actorTarget = StochasticActor(self.config['a_layers'], self.config['a_activation'], self.config['a_layerOptions']).to(device)
+
         if checkpoint:
             self.actor.load_state_dict(checkpoint['actor'])
-            self.actorTarget.load_state_dict(checkpoint['actorTarget'])
-        else:
-            self.actorTarget.load_state_dict(self.actor.state_dict())
 
-        self.actorTarget.load_state_dict(self.actor.state_dict())
-        self.actorTarget.eval()
         self.actorOptim = torch.optim.Adam(self.actor.parameters(),
                                            lr=self.config['a_lr'],
                                            weight_decay=self.config['weightDecay'])
 
-        self.critic = QFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
-        self.criticTarget = QFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
+        self.critic = VFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
+        self.criticTarget = VFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
         if checkpoint:
             self.critic.load_state_dict(checkpoint['critic'])
             self.criticTarget.load_state_dict(checkpoint['criticTarget'])
@@ -112,16 +106,13 @@ class PPO(Agent):
         # Optimize critic
         self.critic.train()
         self.criticOptim.zero_grad()
-        cInput = torch.cat((actions, states, refs[:, 1:self.h + 1]), axis=1)
-        q = self.critic(cInput)
+        cInput = torch.cat((states, refs[:, 1:self.h + 1]), axis=1)
+        cNextInput = torch.cat([next_states, refs[:, 2:self.h + 2]], axis=1)
 
-        with torch.no_grad():
-            next_actions, _ = self.actorTarget(torch.cat([next_states, refs[:, 2:self.h + 2]], axis=1))
-            next_q = (1 - dones) * self.criticTarget(torch.cat([next_actions,
-                                                           next_states,
-                                                           refs[:, 2:self.h + 2]], axis=1))
+        v = self.critic(cInput)
+        next_v = (1 - dones) * self.criticTarget(cNextInput).detach()
 
-        critic_loss = self.criticLossF(q, rewards + self.discount * next_q)
+        critic_loss = self.criticLossF(v, rewards + self.discount * next_v)
         critic_loss.backward()
         self.criticOptim.step()
 
@@ -136,18 +127,14 @@ class PPO(Agent):
         c_log_probs = dist.log_prob(actions)
         entropy = dist.entropy()
 
-        # Advantage Q(a, s) - V(s)
-        with torch.no_grad():
-            self.critic.eval()
-            qs = self.critic(torch.cat([actions, actorInput], axis=1))
-            vs = self.critic.value(actorInput, self.actor, nSamples=100)
-            adv = (qs - vs).detach()
+        # Advantage r + discount * v(s_t+1) - v(s_t)
+        adv = rewards + self.discount * self.critic(cNextInput) - self.critic(cInput)
 
         # Importance Weight
         ratios = torch.exp(c_log_probs - log_probs.detach()) + 1e-9
         surr1 = ratios * adv
         surr2 = torch.clamp(ratios, 1 - self.clip, 1 + self.clip) * adv
-        actor_loss = - torch.min(surr1, surr2) - 0.01 * entropy
+        actor_loss = - torch.min(surr1, surr2) - self.klCost * entropy
         actor_loss = actor_loss.mean()
         actor_loss.backward()
         self.actorOptim.step()
@@ -158,16 +145,12 @@ class PPO(Agent):
             for targetP, oP in zip(self.criticTarget.parameters(), self.critic.parameters()):
                 targetP = (1 - self.tau) * targetP + self.tau * oP
 
-            for targetP, oP in zip(self.actorTarget.parameters(), self.actor.parameters()):
-                targetP = (1 - self.tau) * targetP + self.tau * oP
-
         return {'actor_loss': actor_loss.item(), 'critic_loss': critic_loss.item()}
 
     def toDict(self) -> dict:
         cp: dict = {
             'config': self.config,
             'actor': self.actor.state_dict(),
-            'actorTarget': self.actorTarget.state_dict(),
             'critic': self.critic.state_dict(),
             'criticTarget': self.criticTarget.state_dict()
         }

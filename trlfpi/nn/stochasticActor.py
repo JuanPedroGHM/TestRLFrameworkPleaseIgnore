@@ -9,7 +9,7 @@ from .util import mlp
 
 class StochasticActor(nn.Module):
 
-    def __init__(self, layerSizes: List[int], layerActivations: List[str], layerOptions: List[dict] = None):
+    def __init__(self, layerSizes: List[int], layerActivations: List[str], layerOptions: List[dict] = None, explorationNoise: float = 1.0):
 
         super(StochasticActor, self).__init__()
         if not layerOptions:
@@ -20,7 +20,8 @@ class StochasticActor(nn.Module):
             self.mu = mlp(layerSizes[-2:],
                           layerActivations[-1:])
             self.sigma = mlp(layerSizes[-2:],
-                             ['relu'])
+                             ['relu'],
+                             [{'bias': explorationNoise}])
         else:
             self.encoder = mlp(layerSizes[:-1],
                                layerActivations[:-1],
@@ -31,7 +32,8 @@ class StochasticActor(nn.Module):
                           layerActivations[-1:],
                           layerOptions[-1:])
             self.sigma = mlp(layerSizes[-2:],
-                             ['relu'])
+                             ['relu'],
+                             [{'bias': explorationNoise}])
 
     def forward(self, obs):
         z = self.encoder(obs)

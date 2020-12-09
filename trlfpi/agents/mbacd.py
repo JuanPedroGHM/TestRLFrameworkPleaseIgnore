@@ -33,6 +33,7 @@ class MBACD(Agent):
         'weightDecay': 1e-3,
         'batchSize': 512,
         'update_freq': 2,
+        'explorationNoise': 1.0,
 
         # Env model
         'model': 'clutch',
@@ -46,16 +47,13 @@ class MBACD(Agent):
             self.config = checkpoint['config']
 
         self.device = device
-        self.actor = StochasticActor(self.config['a_layers'], self.config['a_activation'], self.config['a_layerOptions']).to(device)
-        self.actorTarget = StochasticActor(self.config['a_layers'], self.config['a_activation'], self.config['a_layerOptions']).to(device)
+        self.actor = StochasticActor(self.config['a_layers'],
+                                     self.config['a_activation'],
+                                     self.config['a_layerOptions'],
+                                     explorationNoise=self.config['explorationNoise']).to(device)
         if checkpoint:
             self.actor.load_state_dict(checkpoint['actor'])
-            self.actorTarget.load_state_dict(checkpoint['actorTarget'])
-        else:
-            self.actorTarget.load_state_dict(self.actor.state_dict())
 
-        self.actorTarget.load_state_dict(self.actor.state_dict())
-        self.actorTarget.eval()
         self.actorOptim = torch.optim.Adam(self.actor.parameters(),
                                            lr=self.config['a_lr'],
                                            weight_decay=self.config['weightDecay'])
@@ -127,7 +125,7 @@ class MBACD(Agent):
             for i in range(2, self.h + 2):
                 cActionsInput = torch.cat([refs[:, i:self.h + i] - cStates[:, [0]],
                                           cStates[:, [1]]], axis=1)
-                cActions, _ = self.actorTarget(cActionsInput)
+                cActions, _ = self.actor(cActionsInput)
                 predictedActions.append(cActions)
 
                 pStates = self.model.system(cStates, cActions, gpu=True)
@@ -151,8 +149,8 @@ class MBACD(Agent):
         self.actor.train()
         self.actorOptim.zero_grad()
 
-        actorInput = torch.tensor(np.hstack([refs[:, 1:self.h + 1] - states[:, [0]],
-                                             states[:, [1]]]), device=self.device)
+        actorInput = torch.cat([refs[:, 1:self.h + 1] - states[:, [0]],
+                                states[:, [1]]], axis=1)
         pActions, c_log_probs = self.actor.act(actorInput, sample=False, prevActions=actions)
 
         self.critic.eval()
@@ -171,16 +169,12 @@ class MBACD(Agent):
             for targetP, oP in zip(self.criticTarget.parameters(), self.critic.parameters()):
                 targetP = (1 - self.tau) * targetP + self.tau * oP
 
-            for targetP, oP in zip(self.actorTarget.parameters(), self.actor.parameters()):
-                targetP = (1 - self.tau) * targetP + self.tau * oP
-
         return {'actor_loss': actor_loss.item(), 'critic_loss': critic_loss.item()}
 
     def toDict(self) -> dict:
         cp: dict = {
             'config': self.config,
             'actor': self.actor.state_dict(),
-            'actorTarget': self.actorTarget.state_dict(),
             'critic': self.critic.state_dict(),
             'criticTarget': self.criticTarget.state_dict()
         }

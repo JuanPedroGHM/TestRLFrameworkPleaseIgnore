@@ -24,10 +24,11 @@ class LinearEnv(gym.Env):
     numrandref = 50
     noise_variance_ref = 0.0
 
-    def __init__(self, horizon: int = 1, deltaActionCost: float = 0.001):
+    def __init__(self, horizon: int = 1, deltaActionCost: float = 0.001, rewardScaling: float = 1.0):
         super().__init__()
         self.alpha = deltaActionCost
         self.h = horizon
+        self.rewardScaling = rewardScaling
         self.refGen = ReferenceGenerator(LinearEnv.N,
                                          LinearEnv.timeStep,
                                          LinearEnv.numrandref,
@@ -57,7 +58,7 @@ class LinearEnv(gym.Env):
 
         self.k += 1
 
-        stateCost = np.power(self.ref[0, self.k] - next_state[0, 0], 2)
+        stateCost = self.rewardScaling * np.power(self.ref[0, self.k] - next_state[0, 0], 2)
         if not self.lastAction:
             self.lastAction = action
             actionCost = 0

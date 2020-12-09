@@ -27,10 +27,11 @@ class ClutchEnv(gym.Env):
     numrandref = 8
     noise_variance_ref = 0.0
 
-    def __init__(self, horizon: int = 1, deltaActionCost: float = 0.001):
+    def __init__(self, horizon: int = 1, deltaActionCost: float = 0.001, rewardScaling: float = 1.0):
         super().__init__()
         self.h = horizon
         self.deltaActionCost = deltaActionCost
+        self.rewardScaling = rewardScaling
         self.refGen = ReferenceGenerator(ClutchEnv.N,
                                          ClutchEnv.timeStep,
                                          ClutchEnv.numrandref,
@@ -60,7 +61,7 @@ class ClutchEnv(gym.Env):
         self.state = next_state
 
         self.k += 1
-        stateCost = - np.power(self.ref[0, self.k] - next_state[0, 0], 2)
+        stateCost = - self.rewardScaling * np.power(self.ref[0, self.k] - next_state[0, 0], 2)
 
         if not self.lastAction:
             actionCost = 0.0
@@ -91,8 +92,8 @@ class ClutchEnv(gym.Env):
         # state : [[omegaIn, omegaOut]]
         # action: [[capacityTorque]]
 
-        omegaIn = state[:, 0]
-        omegaOut = state[:, 1]
+        omegaIn = state[:, [0]]
+        omegaOut = state[:, [1]]
 
         torqueIn = ClutchEnv.torqueInbase
         torqueOut = ClutchEnv.torqueOutFactor * omegaOut
@@ -113,9 +114,12 @@ class ClutchEnv(gym.Env):
         next_state = A * ClutchEnv.timeStep + state
 
         # Check if omegas crossed
-        done = ((omegaIn < ClutchEnv.gamma * omegaOut and
-                 next_state[:, 0] > ClutchEnv.gamma * next_state[:, 1]) or
-                (omegaIn > ClutchEnv.gamma * omegaOut and
-                 next_state[:, 0] < ClutchEnv.gamma * next_state[:, 1]))
+        if gpu:
+            return next_state
+        else:
+            done = ((omegaIn < ClutchEnv.gamma * omegaOut and
+                     next_state[:, 0] > ClutchEnv.gamma * next_state[:, 1]) or
+                    (omegaIn > ClutchEnv.gamma * omegaOut and
+                     next_state[:, 0] < ClutchEnv.gamma * next_state[:, 1]))
 
-        return next_state, done
+            return next_state, done

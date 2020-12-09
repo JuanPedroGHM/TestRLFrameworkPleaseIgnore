@@ -24,3 +24,13 @@ class QFunc(nn.Module):
         qs = self.forward(torch.cat([actions, x.repeat_interleave(nSamples, dim=0)], axis=1))
         values = qs.reshape([x.shape[0], nSamples]).mean(1, keepdim=True)
         return values
+
+
+class VFunc(nn.Module):
+
+    def __init__(self, layerSizes: List[int], layerActivations: List[str], layerOptions: List[dict] = None):
+        super(VFunc, self).__init__()
+        self.layers = mlp(layerSizes, layerActivations, layerOptions, batchNorm=True, dropout=True)
+
+    def forward(self, x: torch.Tensor):
+        return self.layers(x)

@@ -1,0 +1,38 @@
+report:
+  path: './results/clutchPPO_b_h2'
+
+trainer:
+  episodes: 1000
+  maxEpisodeLenght: 500
+  evalFreq: 25
+  plot: False
+  plotAction: True
+
+
+agent:
+  name: 'ppo'
+  h: 2
+  discount: 0.9
+
+  a_layers: [4, 400, 300, 1]
+  a_activation: ['relu', 'relu', 'identity']
+  a_layerOptions: [{}, {}, {'bias': 20.0}]
+  a_lr: 0.0003
+  c_layers: [4, 400, 300, 1]
+  c_activation: ['relu', 'relu', 'invRelu']
+  c_lr: 0.001
+  tau: 0.001
+  weightDecay: 0.000
+  batchSize: 512
+  update_freq: 2 
+  bufferSize: 10000
+  explorationNoise: 10.0 
+  clip: 0.2
+  klCost: 0.001
+
+env:
+  name: 'clutch-v0'
+  args:
+    horizon: 3
+    deltaActionCost: 0.001
+    rewardScaling: 1.0
