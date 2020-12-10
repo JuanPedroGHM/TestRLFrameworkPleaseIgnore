@@ -119,13 +119,12 @@ class Trainer():
             print(f"Test {i}: Reward = {epsReward}")
             self.report.log('test_reward', epsReward)
 
+            plotData = np.stack((states, refs), axis=-1)
+            self.report.savePlot(f"test_{i}_plot",
+                                 ['State', 'Ref'],
+                                 plotData)
             if self.config['plotAction']:
-                plotData = np.stack((states, refs, actions), axis=-1)
-                self.report.savePlot(f"test_{i}_plot",
-                                     ['State', 'Ref', 'Actions'],
-                                     plotData)
-            else:
-                plotData = np.stack((states, refs), axis=-1)
-                self.report.savePlot(f"test_{i}_plot",
-                                     ['State', 'Ref'],
+                plotData = np.stack((actions), axis=-1).reshape(len(actions), 1)
+                self.report.savePlot(f"test_{i}_act_plot",
+                                     ['Actions'],
                                      plotData)
