@@ -7,10 +7,11 @@ from .agent import Agent
 from ..memory import GymMemory
 from ..nn.stochasticActor import StochasticActor
 from ..nn.critic import VFunc
+from ..envs import LinearEnv, ClutchEnv
 
 
-@Agent.register("ppo")
-class PPO(Agent):
+@Agent.register("mappo")
+class MAPPO(Agent):
 
     default_config: dict = {
         # Env
@@ -18,13 +19,13 @@ class PPO(Agent):
         'discount': 0.7,
 
         # Policy Network
-        'a_layers': [3, 64, 64, 1],
+        'a_layers': [2, 64, 64, 1],
         'a_activation': ['tahn', 'tahn', 'identity'],
         'a_layerOptions': None,
         'a_lr': 1e-5,
 
         # Critic Network
-        'c_layers': [3, 64, 64, 1],
+        'c_layers': [4, 64, 64, 1],
         'c_activation': ['tahn', 'tahn', 'invRelu'],
         'c_layerOptions': None,
         'c_lr': 1e-3,
@@ -40,7 +41,10 @@ class PPO(Agent):
         'update_freq': 2,
 
         # ReplayBuffer
-        'bufferSize': 10000
+        'bufferSize': 10000,
+
+        # Env model
+        'model': 'linear'
     }
 
     def setup(self, checkpoint: dict = None, device: str = 'cpu'):
@@ -52,7 +56,6 @@ class PPO(Agent):
                                      self.config['a_activation'],
                                      self.config['a_layerOptions'],
                                      explorationNoise=self.config['explorationNoise']).to(device)
-
         if checkpoint:
             self.actor.load_state_dict(checkpoint['actor'])
 
@@ -77,12 +80,19 @@ class PPO(Agent):
         self.h = self.config['h']
         self.updates = 0
         self.tau = self.config['tau']
-        self.discount = self.config['discount']
         self.clip = self.config['clip']
         self.klCost = self.config['klCost']
+        self.discount = self.config['discount']
+
+        if self.config['model'] == 'clutch':
+            self.model = ClutchEnv()
+        else:
+            self.model = LinearEnv()
 
     def act(self, state: np.ndarray, ref: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        actorInput = torch.tensor(np.hstack([state, ref[:, 1:self.h + 1]]), device=self.device)
+
+        actorInput = torch.tensor(np.hstack([ref[:, 1:self.h + 1] - state[:, [0]],
+                                             state[:, [1]]]), device=self.device)
 
         if self.mode == 'train':
             with torch.no_grad():
@@ -107,11 +117,35 @@ class PPO(Agent):
         # Get training batch
         states, refs, actions, log_probs, rewards, dones, next_states = self.replayBuff.get(self.config['batchSize'])
 
+        # 1) Update critic
+        # a) Get deltas
+
+        with torch.no_grad():
+            deltas = torch.cat([refs[:, [0]] - states[:, [0]],
+                                refs[:, [1]] - next_states[:, [0]],
+                                torch.zeros((states.shape[0], self.h), device=self.device)], axis=1)
+            d2 = torch.cat([states[:, [1]],
+                            next_states[:, [1]],
+                            torch.zeros((states.shape[0], self.h), device=self.device)], axis=1)
+            cStates = next_states
+            predictedActions = []
+            for i in range(2, self.h + 2):
+                cActionsInput = torch.cat([refs[:, i:self.h + i] - cStates[:, [0]],
+                                          cStates[:, [1]]], axis=1)
+                cActions, _ = self.actor(cActionsInput)
+                predictedActions.append(cActions)
+
+                pStates = self.model.system(cStates, cActions, gpu=True)
+                deltas[:, [i]] += refs[:, [i]] - pStates[:, [0]]
+                d2[:, [i]] += pStates[:, [1]]
+                cStates = pStates
+
         # Optimize critic
         self.critic.train()
         self.criticOptim.zero_grad()
-        cInput = torch.cat((states, refs[:, 1:self.h + 1]), axis=1)
-        cNextInput = torch.cat([next_states, refs[:, 2:self.h + 2]], axis=1)
+
+        cInput = torch.cat([deltas[:, :self.h + 1], d2[:, :self.h + 1]], axis=1)
+        cNextInput = torch.cat([deltas[:, 1:self.h + 2], d2[:, 1:self.h + 2]], axis=1)
 
         v = self.critic(cInput)
         next_v = (1 - dones) * self.criticTarget(cNextInput).detach()
@@ -124,8 +158,8 @@ class PPO(Agent):
         self.actor.train()
         self.actorOptim.zero_grad()
 
-        # Get current log_probs and entropy
-        actorInput = torch.cat([states, refs[:, 1:self.h + 1]], axis=1)
+        actorInput = torch.cat([refs[:, 1:self.h + 1] - states[:, [0]],
+                                states[:, [1]]], axis=1)
         mus, sigmas = self.actor(actorInput)
         dist = Normal(mus, sigmas)
         c_log_probs = dist.log_prob(actions)

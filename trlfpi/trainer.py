@@ -128,3 +128,5 @@ class Trainer():
                 self.report.savePlot(f"test_{i}_act_plot",
                                      ['Actions'],
                                      plotData)
+
+        self.report.generateReport()

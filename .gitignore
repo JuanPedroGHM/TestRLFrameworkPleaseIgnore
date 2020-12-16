@@ -129,4 +129,4 @@ notebooks/.ipynb_checkpoints
 # ENV
 .envrc
 .vim
-
+plots/

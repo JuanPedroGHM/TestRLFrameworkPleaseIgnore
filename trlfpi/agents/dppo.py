@@ -1,7 +1,7 @@
-from typing import List, Tuple
-import numpy as np
 import torch
+import numpy as np
 from torch.distributions import Normal
+from typing import List, Tuple
 
 from .agent import Agent
 from ..memory import GymMemory
@@ -9,8 +9,8 @@ from ..nn.stochasticActor import StochasticActor
 from ..nn.critic import VFunc
 
 
-@Agent.register("ppo")
-class PPO(Agent):
+@Agent.register("dppo")
+class DPPO(Agent):
 
     default_config: dict = {
         # Env
@@ -18,7 +18,7 @@ class PPO(Agent):
         'discount': 0.7,
 
         # Policy Network
-        'a_layers': [3, 64, 64, 1],
+        'a_layers': [2, 64, 64, 1],
         'a_activation': ['tahn', 'tahn', 'identity'],
         'a_layerOptions': None,
         'a_lr': 1e-5,
@@ -82,7 +82,8 @@ class PPO(Agent):
         self.klCost = self.config['klCost']
 
     def act(self, state: np.ndarray, ref: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        actorInput = torch.tensor(np.hstack([state, ref[:, 1:self.h + 1]]), device=self.device)
+        actorInput = torch.tensor(np.hstack([ref[:, 1:self.h + 1] - state[:, [0]],
+                                             state[:, [1]]]), device=self.device)
 
         if self.mode == 'train':
             with torch.no_grad():
@@ -125,7 +126,8 @@ class PPO(Agent):
         self.actorOptim.zero_grad()
 
         # Get current log_probs and entropy
-        actorInput = torch.cat([states, refs[:, 1:self.h + 1]], axis=1)
+        actorInput = torch.cat([refs[:, 1:self.h + 1] - states[:, [0]],
+                                states[:, [1]]], axis=1)
         mus, sigmas = self.actor(actorInput)
         dist = Normal(mus, sigmas)
         c_log_probs = dist.log_prob(actions)

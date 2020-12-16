@@ -5,3 +5,5 @@ from .ac import AC
 from .dpg import DPG
 from .mbacd import MBACD
 from .ppo import PPO
+from .dppo import DPPO
+from .mappo import MAPPO
