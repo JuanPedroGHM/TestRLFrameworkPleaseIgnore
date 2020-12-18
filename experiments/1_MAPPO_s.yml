@@ -4,7 +4,7 @@ report:
 trainer:
   episodes: 5000
   maxEpisodeLenght: 1000
-  evalFreq: 50
+  evalFreq: 10
   plot: False
   plotAction: True
 
@@ -21,14 +21,14 @@ agent:
   c_layers: [8, 64, 64, 1]
   c_activation: ['relu', 'relu', 'invRelu']
   c_lr: 0.005
-  tau: 0.0005
+  tau: 0.001
   weightDecay: 0.000
   batchSize: 512
   update_freq: 2 
   bufferSize: 10000
   explorationNoise: 10.0 
-  clip: 0.05
-  klCost: 0.001
+  clip: 0.2
+  klCost: 0.01
   model: 'clutch'
 
 env:
