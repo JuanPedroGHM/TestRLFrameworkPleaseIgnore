@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from torch.distributions import Normal
 from typing import List, Tuple
+from itertools import chain
 
 from .agent import Agent
 from ..memory import GymMemory
@@ -9,8 +10,8 @@ from ..nn.stochasticActor import StochasticActor
 from ..nn.critic import VFunc
 
 
-@Agent.register("dppo")
-class DPPO(Agent):
+@Agent.register("tdppo")
+class TDPPO(Agent):
 
     default_config: dict = {
         # Env
@@ -60,15 +61,25 @@ class DPPO(Agent):
                                            lr=self.config['a_lr'],
                                            weight_decay=self.config['weightDecay'])
 
-        self.critic = VFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
-        self.criticTarget = VFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
+        self.c1 = VFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
+        self.c1T = VFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
         if checkpoint:
-            self.critic.load_state_dict(checkpoint['critic'])
-            self.criticTarget.load_state_dict(checkpoint['criticTarget'])
+            self.c1.load_state_dict(checkpoint['c1'])
+            self.c1T.load_state_dict(checkpoint['c1T'])
         else:
-            self.criticTarget.load_state_dict(self.critic.state_dict())
-        self.criticTarget.eval()
-        self.criticOptim = torch.optim.Adam(self.critic.parameters(),
+            self.c1T.load_state_dict(self.c1.state_dict())
+        self.c1T.eval()
+
+        self.c2 = VFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
+        self.c2T = VFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
+        if checkpoint:
+            self.c2.load_state_dict(checkpoint['c2'])
+            self.c2T.load_state_dict(checkpoint['c2T'])
+        else:
+            self.c2T.load_state_dict(self.c2.state_dict())
+        self.c2T.eval()
+
+        self.criticOptim = torch.optim.Adam(chain(self.c1.parameters(), self.c2.parameters()),
                                             lr=self.config['c_lr'],
                                             weight_decay=self.config['weightDecay'])
         self.criticLossF = torch.nn.MSELoss()
@@ -109,17 +120,22 @@ class DPPO(Agent):
         states, refs, actions, log_probs, rewards, dones, next_states = self.replayBuff.get(self.config['batchSize'])
 
         # Optimize critic
-        self.critic.train()
+        self.c1.train()
+        self.c2.train()
         self.criticOptim.zero_grad()
         netInput = torch.cat([refs[:, 1:self.h + 1] - states[:, [0]],
-                             states[:, [1]]], axis=1)
+                                states[:, [1]]], axis=1)
         netNextInput = torch.cat([refs[:, 2:self.h + 2] - next_states[:, [0]],
-                                 next_states[:, [1]]], axis=1)
+                                next_states[:, [1]]], axis=1)
 
-        v = self.critic(netInput)
-        next_v = (1 - dones) * self.criticTarget(netNextInput).detach()
+        v1 = self.c1(netInput)
+        v2 = self.c2(netInput)
 
-        critic_loss = self.criticLossF(v, rewards + self.discount * next_v)
+        next_v = (1 - dones) * torch.min(self.c1T(netNextInput), self.c2T(netNextInput)).detach()
+
+        c1_loss = self.criticLossF(v1, rewards + self.discount * next_v)
+        c2_loss = self.criticLossF(v2, rewards + self.discount * next_v)
+        critic_loss = c1_loss + c2_loss
         critic_loss.backward()
         self.criticOptim.step()
 
@@ -134,7 +150,7 @@ class DPPO(Agent):
         entropy = dist.entropy()
 
         # Advantage r + discount * v(s_t+1) - v(s_t)
-        adv = rewards + self.discount * self.critic(netNextInput) - self.critic(netInput)
+        adv = rewards + self.discount * self.c1(netNextInput) - self.c1(netInput)
 
         # Importance Weight
         ratios = torch.exp(c_log_probs - log_probs.detach()) + 1e-9
@@ -148,16 +164,20 @@ class DPPO(Agent):
         self.updates += 1
 
         if self.updates % self.config['update_freq'] == 0:
-            for targetP, oP in zip(self.criticTarget.parameters(), self.critic.parameters()):
+            for targetP, oP in zip(self.c1T.parameters(), self.c1.parameters()):
+                targetP = (1 - self.tau) * targetP + self.tau * oP
+            for targetP, oP in zip(self.c2T.parameters(), self.c2.parameters()):
                 targetP = (1 - self.tau) * targetP + self.tau * oP
 
-        return {'actor_loss': actor_loss.item(), 'critic_loss': critic_loss.item()}
+        return {'actor_loss': actor_loss.item(), 'c1_loss': c1_loss.item(), 'c2_loss': c2_loss.item()}
 
     def toDict(self) -> dict:
         cp: dict = {
             'config': self.config,
             'actor': self.actor.state_dict(),
-            'critic': self.critic.state_dict(),
-            'criticTarget': self.criticTarget.state_dict()
+            'c1': self.c1.state_dict(),
+            'c1T': self.c1T.state_dict(),
+            'c2': self.c2.state_dict(),
+            'c2T': self.c2T.state_dict()
         }
         return cp

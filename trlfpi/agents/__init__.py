@@ -7,3 +7,6 @@ from .mbacd import MBACD
 from .ppo import PPO
 from .dppo import DPPO
 from .mappo import MAPPO
+from .tppo import TPPO
+from .tdppo import TDPPO
+from .tmappo import TMAPPO
