@@ -112,6 +112,7 @@ class Trainer():
         self.report = report
         self.agent = agent
         self.env = env
+        del self.report.variables['test_reward']
 
         for i in range(tests):
             agent.eval()
