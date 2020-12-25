@@ -1,5 +1,5 @@
 report:
-  path: './results/3_TPPO_b_h3'
+  path: './results/5_TPPO_xl_h3'
 
 trainer:
   episodes: 5000
@@ -15,11 +15,11 @@ agent:
   discount: 0.7
 
   a_layers: [5, 400, 400, 300, 1]
-  a_activation: ['relu', 'relu', 'identity']
-  a_layerOptions: [{}, {}, {'bias': 20.0}]
+  a_activation: ['relu', 'relu', 'relu', 'identity']
+  a_layerOptions: [{}, {}, {}, {'bias': 20.0}]
   a_lr: 0.0003
   c_layers: [5, 400, 400, 300, 1]
-  c_activation: ['relu', 'relu', 'invRelu']
+  c_activation: ['relu', 'relu', 'relu', 'invRelu']
   c_lr: 0.005
   tau: 0.005
   weightDecay: 0.000
