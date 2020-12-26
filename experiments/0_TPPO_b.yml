@@ -1,8 +1,8 @@
 report:
-  path: './results/5_TPPO_xl_h3'
+  path: './results/0_TPPO_b'
 
 trainer:
-  episodes: 5000
+  episodes: 2000
   maxEpisodeLenght: 1000
   evalFreq: 10 
   plot: False
@@ -14,25 +14,25 @@ agent:
   h: 3
   discount: 0.7
 
-  a_layers: [5, 400, 400, 300, 1]
-  a_activation: ['relu', 'relu', 'relu', 'identity']
-  a_layerOptions: [{}, {}, {}, {'bias': 20.0}]
+  a_layers: [6, 400, 300, 1]
+  a_activation: ['relu', 'relu', 'identity']
+  a_layerOptions: [{}, {}, {'bias': 20.0}]
   a_lr: 0.0003
-  c_layers: [5, 400, 400, 300, 1]
-  c_activation: ['relu', 'relu', 'relu', 'invRelu']
+  c_layers: [6, 400, 300, 1]
+  c_activation: ['relu', 'relu', 'invRelu']
   c_lr: 0.005
-  tau: 0.005
+  tau: 0.001
   weightDecay: 0.000
-  batchSize: 512
+  batchSize: 32
   update_freq: 2 
   bufferSize: 10000
   explorationNoise: 10.0 
-  clip: 0.2
+  clip: 0.1
   klCost: 0.01
 
 env:
   name: 'clutch-v0'
   args:
     horizon: 5
-    deltaActionCost: 0.005
+    deltaActionCost: 0.000
     rewardScaling: 1.0

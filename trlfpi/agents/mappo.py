@@ -19,7 +19,7 @@ class MAPPO(Agent):
         'discount': 0.7,
 
         # Policy Network
-        'a_layers': [2, 64, 64, 1],
+        'a_layers': [3, 64, 64, 1],
         'a_activation': ['tahn', 'tahn', 'identity'],
         'a_layerOptions': None,
         'a_lr': 1e-5,
@@ -91,7 +91,7 @@ class MAPPO(Agent):
 
     def act(self, state: np.ndarray, ref: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
-        actorInput = torch.tensor(np.hstack([ref[:, 1:self.h + 1] - state[:, [0]],
+        actorInput = torch.tensor(np.hstack([ref[:, 0:self.h + 1] - state[:, [0]],
                                              state[:, [1]]]), device=self.device)
 
         if self.mode == 'train':
@@ -130,7 +130,7 @@ class MAPPO(Agent):
             cStates = next_states
             predictedActions = []
             for i in range(2, self.h + 2):
-                cActionsInput = torch.cat([refs[:, i:self.h + i] - cStates[:, [0]],
+                cActionsInput = torch.cat([refs[:, i - 1:self.h + i] - cStates[:, [0]],
                                           cStates[:, [1]]], axis=1)
                 cActions, _ = self.actor(cActionsInput)
                 predictedActions.append(cActions)
@@ -144,7 +144,7 @@ class MAPPO(Agent):
         self.critic.train()
         self.criticOptim.zero_grad()
 
-        cInput = torch.cat([deltas[:, :self.h + 1], d2[:, :self.h + 1]], axis=1)
+        cInput = torch.cat([deltas[:, 0:self.h + 1], d2[:, 0:self.h + 1]], axis=1)
         cNextInput = torch.cat([deltas[:, 1:self.h + 2], d2[:, 1:self.h + 2]], axis=1)
 
         v = self.critic(cInput)
@@ -158,7 +158,7 @@ class MAPPO(Agent):
         self.actor.train()
         self.actorOptim.zero_grad()
 
-        actorInput = torch.cat([refs[:, 1:self.h + 1] - states[:, [0]],
+        actorInput = torch.cat([refs[:, 0:self.h + 1] - states[:, [0]],
                                 states[:, [1]]], axis=1)
         mus, sigmas = self.actor(actorInput)
         dist = Normal(mus, sigmas)

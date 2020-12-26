@@ -93,7 +93,7 @@ class TDPPO(Agent):
         self.klCost = self.config['klCost']
 
     def act(self, state: np.ndarray, ref: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        actorInput = torch.tensor(np.hstack([ref[:, 1:self.h + 1] - state[:, [0]],
+        actorInput = torch.tensor(np.hstack([ref[:, 0:self.h + 1] - state[:, [0]],
                                              state[:, [1]]]), device=self.device)
 
         if self.mode == 'train':
@@ -123,9 +123,9 @@ class TDPPO(Agent):
         self.c1.train()
         self.c2.train()
         self.criticOptim.zero_grad()
-        netInput = torch.cat([refs[:, 1:self.h + 1] - states[:, [0]],
+        netInput = torch.cat([refs[:, 0:self.h + 1] - states[:, [0]],
                                 states[:, [1]]], axis=1)
-        netNextInput = torch.cat([refs[:, 2:self.h + 2] - next_states[:, [0]],
+        netNextInput = torch.cat([refs[:, 1:self.h + 2] - next_states[:, [0]],
                                 next_states[:, [1]]], axis=1)
 
         v1 = self.c1(netInput)
