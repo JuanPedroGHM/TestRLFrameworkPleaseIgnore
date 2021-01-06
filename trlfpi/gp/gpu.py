@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 
 from typing import Any, Callable
@@ -10,7 +9,7 @@ from trlfpi.timer import Timer
 class GPu():
 
     def __init__(self,
-                 k_function: Kernel = Kernel.RBF(1.0, [1.0], gpu=True),
+                 k_function: Kernel = Kernel.RBF(1.0, [1.0]),
                  meanF: Any = None,
                  sigma_n: float = 0.1,
                  bGridSize: int = 5,
@@ -65,7 +64,7 @@ class GPu():
         return pMean
 
     def L_alpha(self, K, X, Y):
-        L = torch.cholesky(K + (self.sigma_n ** 2) * torch.eye(K.shape[0]))
+        L = torch.cholesky(K + (self.sigma_n ** 2) * torch.eye(K.shape[0], device=self.device))
         alpha = torch.cholesky_solve(Y - self.priorMean(X), L)
         return L, alpha
 
@@ -81,9 +80,9 @@ class GPu():
         lengthBounds = (torch.max(self.X_TRAIN, dim=0)[0] - torch.min(self.X_TRAIN, dim=0)[0]) * 10
         ranges = [(0.0, torch.tensor(100.0))]
         ranges.extend([(0.0, bound) for bound in lengthBounds])
-        stepSizes = [(r[1] - r[0]) / self.bGridSize for r in ranges]
+        stepSizes = torch.tensor([(r[1] - r[0]) / self.bGridSize for r in ranges], device=self.device)
         grid = [torch.arange(r[0], r[1].item(), step.item()) for r, step in zip(ranges, stepSizes)]
-        grid = torch.stack(torch.meshgrid(grid)).T.reshape(-1, len(ranges))
+        grid = torch.stack(torch.meshgrid(grid)).T.reshape(-1, len(ranges)).to(self.device)
         llArray = list(map(self.logLikelihood, grid))
         bestParams = grid[torch.tensor(llArray).argmin()]
         bounds = (bestParams - stepSizes, bestParams + stepSizes)
@@ -100,7 +99,7 @@ class GPu():
             self.kernel.params = params
 
         if fineTune:
-            tParams = [torch.tensor(self.kernel.params, requires_grad=True)]
+            tParams = [self.kernel.params.clone().detach().requires_grad_(True)]
             lbfgsOptim = torch.optim.LBFGS(tParams, max_iter=100, lr=1e-4)
 
             def closure():
@@ -119,50 +118,3 @@ class GPu():
 
     def __call__(self, x):
         return self.forward(x)
-
-
-if __name__ == "__main__":
-
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
-
-    timer = Timer()
-
-    # GPU TEST
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print(device)
-
-    DATAPOINTS = 1000
-    TEST = 50
-
-    f = lambda x: (x[:, [1]] - x[:, [0]]) * 20 * torch.sin(2 * np.pi * x[:, [0]]) + 10
-
-    X_DATA = 2.0 * torch.rand(DATAPOINTS * 2, device=device).reshape((DATAPOINTS, 2)) - 1.0
-    Y_DATA = f(X_DATA)
-
-    x = torch.arange(-1.0, 1.0, 2.0 / TEST).to(device)
-    x1, x2 = torch.meshgrid([x, x])
-    xx = torch.stack((x1, x2), dim=2).reshape((TEST * TEST, 2))
-    y = f(xx)
-
-    kernel = Kernel.RBF(1.0, [1.0, 1.0], gpu=True)
-    gpModel = GPu(kernel, sigma_n=1.0, meanF=-2.0, device=device)
-    timer.start()
-    gpModel.fit(X_DATA, Y_DATA, fineTune=True, brute=True)
-    y_pred, sigma_pred = gpModel(xx)
-    print(f"2D GPU fit time : {timer.stop()}")
-
-    xx = xx.cpu().numpy()
-    y = y.cpu().numpy()
-    y_pred = y_pred.detach().cpu().numpy()
-    X_DATA = X_DATA.detach().cpu().numpy()
-    Y_DATA = Y_DATA.detach().cpu().numpy()
-
-    fig = plt.figure()
-    ax = fig.add_subplot(211, projection='3d')
-    ax.plot_trisurf(xx[:, 0], xx[:, 1], y.reshape((TEST * TEST,)), color="red")
-    ax.scatter(X_DATA[:, [0]], X_DATA[:, [1]], Y_DATA)
-
-    ax = fig.add_subplot(212, projection='3d')
-    ax.plot_trisurf(xx[:, 0], xx[:, 1], y_pred.reshape((TEST * TEST,)))
-    plt.show()

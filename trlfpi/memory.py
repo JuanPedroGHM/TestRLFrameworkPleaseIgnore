@@ -64,4 +64,3 @@ class GymMemory():
             return map(lambda x: torch.stack(x).reshape(batchSize, -1), zip(*batch))
         else:
             return map(lambda x: torch.stack(x).reshape(self.maxSize, -1), zip(*self.data))
-

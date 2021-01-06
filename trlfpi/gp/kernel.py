@@ -1,16 +1,15 @@
-import numpy as np
 import torch
+import numpy as np
+from torch import Tensor
 from typing import Callable, List, Union
 
-from trlfpi.gp.kernel_util import rbf_f, rbf_f_t
-
-Tensor = Union[np.ndarray, torch.Tensor]
+from trlfpi.gp.kernel_util import rbf_f
 
 
 class Kernel():
 
-    def __init__(self, f: Callable[[Tensor], Tensor] = None, params: Tensor = None, bounds: List[List] = None):
-        self.kernelFunctions: List[Callable[[Tensor], Tensor]] = []
+    def __init__(self, f: Callable[[Tensor, Tensor, Tensor], Tensor] = None, params: Tensor = None, bounds: List[List] = None):
+        self.kernelFunctions: List[Callable[[Tensor, Tensor, Tensor], Tensor]] = []
         self.paramsArray: List[Tensor] = []
         self.bounds: List[List] = []
 
@@ -24,11 +23,7 @@ class Kernel():
         if x2 is None:
             x2 = x1
 
-        if type(x1) == torch.Tensor:
-            result = torch.zeros((x1.shape[0], x2.shape[0])).to(x1.device)
-
-        else:
-            result = np.zeros((x1.shape[0], x2.shape[0]))
+        result = torch.zeros((x1.shape[0], x2.shape[0])).to(x1.device)
 
         if customParams is not None:
 
@@ -55,7 +50,7 @@ class Kernel():
 
     @property
     def params(self) -> Tensor:
-        return np.hstack(self.paramsArray)
+        return torch.cat(self.paramsArray, axis=0)
 
     @params.setter
     def params(self, newParams: Tensor):
@@ -65,15 +60,10 @@ class Kernel():
             newParamsIndex += len(params)
 
     @classmethod
-    def RBF(cls, theta: float, lengths: List, bounds=None, gpu=False):
+    def RBF(cls, theta: float, lengths: List, bounds=None):
 
         if bounds is None:
             bounds = [[0, np.inf] for i in range(1 + len(lengths))]
 
-        if gpu:
-            params = torch.tensor([theta] + lengths)
-            return cls(rbf_f_t, params, bounds)
-        else:
-            params = np.hstack((theta, lengths))
-            return cls(rbf_f, params, bounds)
-
+        params = np.hstack((theta, lengths))
+        return cls(rbf_f, params, bounds)

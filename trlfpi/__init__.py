@@ -1,4 +1,6 @@
+import pretty_errors
 from gym.envs.registration import register
+
 
 register(
     id='linear-with-ref-v0',
