@@ -5,7 +5,7 @@ from torch.distributions import Normal
 from itertools import chain
 
 from .agent import Agent
-from ..memory import GymMemory
+from ..memory import Memory
 from ..nn.stochasticActor import StochasticActor
 from ..nn.critic import VFunc
 from ..envs import LinearEnv, ClutchEnv
@@ -87,7 +87,7 @@ class TMAPPO(Agent):
                                             weight_decay=self.config['weightDecay'])
         self.criticLossF = torch.nn.MSELoss()
 
-        self.replayBuff = GymMemory(self.config['bufferSize'])
+        self.replayBuff = Memory(self.config['bufferSize'])
         self.h = self.config['h']
         self.updates = 0
         self.tau = self.config['tau']

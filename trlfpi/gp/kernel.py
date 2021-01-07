@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from torch import Tensor
-from typing import Callable, List, Union
+from typing import Callable, List
 
 from trlfpi.gp.kernel_util import rbf_f
 
@@ -60,10 +60,10 @@ class Kernel():
             newParamsIndex += len(params)
 
     @classmethod
-    def RBF(cls, theta: float, lengths: List, bounds=None):
+    def RBF(cls, theta: float, lengths: List, bounds=None, device=None):
 
         if bounds is None:
             bounds = [[0, np.inf] for i in range(1 + len(lengths))]
 
-        params = np.hstack((theta, lengths))
+        params = torch.tensor([theta] + lengths, device=device)
         return cls(rbf_f, params, bounds)

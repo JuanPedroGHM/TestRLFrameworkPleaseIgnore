@@ -34,9 +34,6 @@ def trlfpi(ctx: click.Context, config: click.File, gpu: bool):
     ctx.obj['report'] = report
     ctx.obj['trainer'] = trainer
 
-    # Configure torch and setup gpu
-    torch.set_default_dtype(torch.double)
-
     if gpu:
         ctx.obj['device'] = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         print(f"Using on {ctx.obj['device']}")

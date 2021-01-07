@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from .agent import Agent
-from ..memory import GymMemory
+from ..memory import Memory
 from ..nn.stochasticActor import StochasticActor
 
 
@@ -49,7 +49,7 @@ class REINFORCE(Agent):
         self.actorTarget.eval()
 
         self.actorOptim = torch.optim.Adam(self.actor.parameters(), lr=self.config['a_lr'], weight_decay=self.config['weightDecay'])
-        self.replayBuff = GymMemory(self.config['bufferSize'])
+        self.replayBuff = Memory(self.config['bufferSize'])
         self.h = self.config['h']
         self.updates = 0
 

@@ -3,7 +3,7 @@ import numpy as np
 import torch
 
 from .agent import Agent
-from ..memory import GymMemory
+from ..memory import Memory
 from ..nn.deterministicActor import DeterministicActor
 from ..nn.critic import QFunc
 
@@ -73,7 +73,7 @@ class DPG(Agent):
                                             weight_decay=self.config['weightDecay'])
         self.criticLossF = torch.nn.MSELoss()
 
-        self.replayBuff = GymMemory(self.config['bufferSize'])
+        self.replayBuff = Memory(self.config['bufferSize'])
 
         self.h = self.config['h']
         self.tau = self.config['tau']

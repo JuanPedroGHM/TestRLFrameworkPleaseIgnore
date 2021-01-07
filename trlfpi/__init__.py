@@ -1,6 +1,10 @@
 import pretty_errors
-from gym.envs.registration import register
 
+# Configure torch and setup gpu
+import torch
+torch.set_default_dtype(torch.double)
+
+from gym.envs.registration import register
 
 register(
     id='linear-with-ref-v0',
