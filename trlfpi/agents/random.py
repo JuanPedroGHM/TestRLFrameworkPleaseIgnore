@@ -7,6 +7,7 @@ from typing import List, Tuple
 class RandomAgent(Agent):
 
     default_config = {
+        'name': 'random',
         'mean': 0.0,
         'std': 0.1,
         'outputDim': 1,

@@ -11,6 +11,8 @@ from ..nn.stochasticActor import StochasticActor
 class REINFORCE(Agent):
 
     default_config: dict = {
+        'name': 'reinforce',
+
         # Env
         'h': 1,
         'discount': 0.7,

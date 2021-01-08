@@ -27,12 +27,15 @@ class GPModel():
     def __init__(self, config: dict):
         self.config = {key: config.get(key, self.default_config[key]) for key in self.default_config}
 
-    def setup(self, device: str = None):
+    def setup(self, checkpoint: dict = None, device: str = None):
 
         self.device = device
-        self.memory = Memory(self.config['memorySize'])
-        self.epsilon = self.config['episilon']
-        self.brute = True
+        if checkpoint:
+            self.fromDict(checkpoint)
+        else:
+            self.memory = Memory(self.config['memorySize'])
+            self.epsilon = self.config['episilon']
+            self.brute = True
 
         assert(len(self.config['length']) == self.config['inDim'])
 
@@ -56,8 +59,27 @@ class GPModel():
         for index, gp in enumerate(self.gpArray):
             gp.fit(X, Y[:, [index]], fineTune=True, brute=forceBrute or self.brute)
 
+        if self.brute:
+            self.brute = False
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.cat([gp(x)[0] for gp in self.gpArray], axis=1)
+
+    def toDict(self) -> dict:
+        return {
+            'config': self.config,
+            'gpArray': [gp.toDict() for gp in self.gpArray],
+            'memory': self.memory,
+            'epsilon': self.epsilon,
+            'brute': self.brute
+        }
+
+    def fromDict(self, checkpoint: dict):
+        self.config = checkpoint['config']
+        self.gpArray = [GPu().fromDict(gpCheckpoint) for gpCheckpoint in checkpoint['gpArray']]
+        self.memory = checkpoint['memory']
+        self.epsilon = checkpoint['epsilon']
+        self.brute = checkpoint['brute']
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         return self.forward(x)

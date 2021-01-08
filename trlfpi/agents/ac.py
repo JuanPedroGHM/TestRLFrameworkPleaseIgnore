@@ -12,6 +12,8 @@ from ..nn.critic import VFunc
 class AC(Agent):
 
     default_config: dict = {
+        'name': 'ac',
+
         # Env
         'h': 1,
         'discount': 0.7,

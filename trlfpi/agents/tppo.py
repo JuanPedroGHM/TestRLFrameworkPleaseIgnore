@@ -14,6 +14,8 @@ from ..nn.critic import VFunc
 class TPPO(Agent):
 
     default_config: dict = {
+        'name': 'tppo',
+
         # Env
         'h': 1,
         'discount': 0.7,

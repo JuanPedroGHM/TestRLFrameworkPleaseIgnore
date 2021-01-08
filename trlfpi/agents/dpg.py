@@ -12,6 +12,8 @@ from ..nn.critic import QFunc
 class DPG(Agent):
 
     default_config: dict = {
+        'name': 'dpg',
+
         # Env
         'h': 1,
         'discount': 0.7,

@@ -4,15 +4,10 @@ import torch
 import matplotlib.pyplot as plt
 
 import trlfpi
+from trlfpi.report import Report
+from trlfpi.agents import Agent
 from trlfpi.gp.gpmodel import GPModel
 from trlfpi.timer import Timer
-
-K = np.array([[5.4126], [0.2097], [-5.3391], [-0.4110], [0.1121], [-0.0262], [0.0047]])
-
-
-def controller(x, r):
-    Z = np.hstack((x, r[:, 1:]))
-    return -Z @ K
 
 
 if __name__ == '__main__':
@@ -21,7 +16,7 @@ if __name__ == '__main__':
     print(device)
 
     print('Starting env')
-    env = gym.make('linear-with-ref-v0', horizon=5, deltaActionCost=0.0)
+    env = gym.make('clutch-v0', horizon=5, deltaActionCost=0.0)
 
     config = {
         'memorySize': 1000,
@@ -34,6 +29,14 @@ if __name__ == '__main__':
     }
     model = GPModel(config)
     model.setup(device=device)
+
+    report = Report('results/1_TDPPO_b')
+    report.id(5)
+
+    agentCP: dict = report.unpickle('agent_best')
+    agent = Agent.create('tdppo', agentCP['config'])
+    agent.setup(agentCP)
+    agent.eval()
 
     timer = Timer()
 
@@ -49,14 +52,13 @@ if __name__ == '__main__':
         gpIns = []
         states = []
         predictedStates = []
+        refs = []
 
         totalError = 0
 
         while not done and step < 100:
             # Get action from controller
-            if ref.shape[1] < 5 + 1:
-                ref = np.pad(ref, ((0, 0), (0, 5 + 1 - ref.shape[1])), mode='edge')
-            u = controller(state, ref).reshape((1, 1))
+            u, _ = agent.act(state, ref)
 
             # Predict next state
             gpIn = np.hstack([state, u])
@@ -65,12 +67,14 @@ if __name__ == '__main__':
             # Step on the env
             next_state, reward, done, next_ref = env.step(u)
 
+
             # Calc abs
             totalError += np.sum((next_state - predictedState)**2)
 
             gpIns.append(gpIn)
             states.append(next_state)
             predictedStates.append(predictedState)
+            refs.append(next_ref[:, 0])
 
             state = next_state
             ref = next_ref
@@ -80,11 +84,14 @@ if __name__ == '__main__':
         states = np.vstack(states)
         gpIns = np.vstack(gpIns)
         predictedStates = np.vstack(predictedStates)
+        refs = np.vstack(refs)
 
         print(f"Total error: {totalError}")
 
         plt.plot(states[:, 0], '--', label='x0')
         plt.plot(predictedStates[:, 0], '-', label="x0'")
+        plt.plot(refs, '*', label="r")
+        plt.plot()
         plt.legend()
         plt.grid()
         plt.show()

@@ -7,7 +7,6 @@ import numpy as np
 from functools import reduce
 
 import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 

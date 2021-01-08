@@ -13,6 +13,8 @@ from ..envs import LinearEnv, ClutchEnv
 class MBACD(Agent):
 
     default_config: dict = {
+        'name': 'mbacd',
+
         # Env
         'h': 1,
         'discount': 0.7,

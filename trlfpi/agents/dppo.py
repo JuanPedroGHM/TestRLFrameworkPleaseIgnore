@@ -13,6 +13,8 @@ from ..nn.critic import VFunc
 class DPPO(Agent):
 
     default_config: dict = {
+        'name': 'dppo',
+
         # Env
         'h': 1,
         'discount': 0.7,

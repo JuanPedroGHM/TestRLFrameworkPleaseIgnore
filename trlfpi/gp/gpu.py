@@ -116,5 +116,23 @@ class GPu():
         K = self.kernel(X, X)
         self.L, self.alpha = self.L_alpha(K, X, Y)
 
+    def toDict(self) -> dict:
+        return {
+            'X_TRAIN': self.X_TRAIN,
+            'alpha': self.alpha,
+            'L': self.L,
+            'sigma_n': self.sigma_n,
+            'meanF': self.meanF,
+            'kernel': self.kernel
+        }
+
+    def fromDict(self, checkpoint: dict):
+        self.X_TRAIN = checkpoint['X_TRAIN']
+        self.alpha = checkpoint['alpha']
+        self.L = checkpoint['L']
+        self.sigma_n = checkpoint['sigma_n']
+        self.meanF = checkpoint['meanF']
+        self.kernel = checkpoint['kernel']
+
     def __call__(self, x):
         return self.forward(x)

@@ -14,6 +14,8 @@ from ..envs import LinearEnv, ClutchEnv
 class MAPPO(Agent):
 
     default_config: dict = {
+        'name': 'mappo',
+
         # Env
         'h': 1,
         'discount': 0.7,
