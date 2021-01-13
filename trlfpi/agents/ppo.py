@@ -23,12 +23,14 @@ class PPO(Agent):
         'a_layers': [4, 64, 64, 1],
         'a_activation': ['tahn', 'tahn', 'identity'],
         'a_layerOptions': None,
+        'a_inCenter': [0.0, 0.0, 0.0, 0.0],
         'a_lr': 1e-5,
 
         # Critic Network
         'c_layers': [4, 64, 64, 1],
         'c_activation': ['tahn', 'tahn', 'invRelu'],
         'c_layerOptions': None,
+        'c_inCenter': [0.0, 0.0, 0.0, 0.0],
         'c_lr': 1e-3,
 
         # PPO
@@ -83,8 +85,10 @@ class PPO(Agent):
         self.clip = self.config['clip']
         self.klCost = self.config['klCost']
 
+        self.inCenter = torch.tensor(self.config['a_inCenter'], device=self.device).reshape([1, -1])
+
     def act(self, state: np.ndarray, ref: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        actorInput = torch.tensor(np.hstack([state, ref[:, 0:self.h + 1]]), device=self.device)
+        actorInput = torch.tensor(np.hstack([state, ref[:, 0:self.h + 1]]), device=self.device) - self.inCenter
 
         if self.mode == 'train':
             with torch.no_grad():
@@ -112,8 +116,8 @@ class PPO(Agent):
         # Optimize critic
         self.critic.train()
         self.criticOptim.zero_grad()
-        cInput = torch.cat((states, refs[:, 0:self.h + 1]), axis=1)
-        cNextInput = torch.cat([next_states, refs[:, 1:self.h + 2]], axis=1)
+        cInput = torch.cat((states, refs[:, 0:self.h + 1]), axis=1) - self.inCenter
+        cNextInput = torch.cat([next_states, refs[:, 1:self.h + 2]], axis=1) - self.inCenter
 
         v = self.critic(cInput)
         next_v = (1 - dones) * self.criticTarget(cNextInput).detach()
@@ -127,7 +131,7 @@ class PPO(Agent):
         self.actorOptim.zero_grad()
 
         # Get current log_probs and entropy
-        actorInput = torch.cat([states, refs[:, 0:self.h + 1]], axis=1)
+        actorInput = torch.cat([states, refs[:, 0:self.h + 1]], axis=1) - self.inCenter
         mus, sigmas = self.actor(actorInput)
         dist = Normal(mus, sigmas)
         c_log_probs = dist.log_prob(actions)

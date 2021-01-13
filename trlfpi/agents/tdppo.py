@@ -21,14 +21,16 @@ class TDPPO(Agent):
         'discount': 0.7,
 
         # Policy Network
-        'a_layers': [2, 64, 64, 1],
+        'a_layers': [3, 64, 64, 1],
         'a_activation': ['tahn', 'tahn', 'identity'],
+        'a_inCenter': [0.0, 0.0, 0.0],
         'a_layerOptions': None,
         'a_lr': 1e-5,
 
         # Critic Network
         'c_layers': [3, 64, 64, 1],
         'c_activation': ['tahn', 'tahn', 'invRelu'],
+        'c_inCenter': [0.0, 0.0, 0.0],
         'c_layerOptions': None,
         'c_lr': 1e-3,
 
@@ -93,10 +95,11 @@ class TDPPO(Agent):
         self.discount = self.config['discount']
         self.clip = self.config['clip']
         self.klCost = self.config['klCost']
+        self.inCenter = torch.tensor(self.config['a_inCenter'], device=self.device).reshape([1, -1])
 
     def act(self, state: np.ndarray, ref: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         actorInput = torch.tensor(np.hstack([ref[:, 0:self.h + 1] - state[:, [0]],
-                                             state[:, [1]]]), device=self.device)
+                                             state[:, [1]]]), device=self.device) - self.inCenter
 
         if self.mode == 'train':
             with torch.no_grad():
@@ -126,9 +129,9 @@ class TDPPO(Agent):
         self.c2.train()
         self.criticOptim.zero_grad()
         netInput = torch.cat([refs[:, 0:self.h + 1] - states[:, [0]],
-                                states[:, [1]]], axis=1)
+                                states[:, [1]]], axis=1) - self.inCenter
         netNextInput = torch.cat([refs[:, 1:self.h + 2] - next_states[:, [0]],
-                                next_states[:, [1]]], axis=1)
+                                next_states[:, [1]]], axis=1) - self.inCenter
 
         v1 = self.c1(netInput)
         v2 = self.c2(netInput)

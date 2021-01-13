@@ -22,14 +22,16 @@ class TMAPPO(Agent):
         'discount': 0.7,
 
         # Policy Network
-        'a_layers': [2, 64, 64, 1],
+        'a_layers': [3, 64, 64, 1],
         'a_activation': ['tahn', 'tahn', 'identity'],
+        'a_inCenter': [0.0, 0.0, 0.0],
         'a_layerOptions': None,
         'a_lr': 1e-5,
 
         # Critic Network
         'c_layers': [4, 64, 64, 1],
         'c_activation': ['tahn', 'tahn', 'invRelu'],
+        'c_inCenter': [0.0, 0.0, 0.0, 0.0],
         'c_layerOptions': None,
         'c_lr': 1e-3,
 
@@ -97,6 +99,9 @@ class TMAPPO(Agent):
         self.klCost = self.config['klCost']
         self.discount = self.config['discount']
 
+        self.aInCenter = torch.tensor(self.config['a_inCenter'], device=self.device).reshape([1, -1])
+        self.cInCenter = torch.tensor(self.config['c_inCenter'], device=self.device).reshape([1, -1])
+
         if self.config['model'] == 'clutch':
             self.model = ClutchEnv()
         else:
@@ -104,8 +109,8 @@ class TMAPPO(Agent):
 
     def act(self, state: np.ndarray, ref: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
-        actorInput = torch.tensor(np.hstack([ref[:, 0:self.h + 1] - state[:, [0]],
-                                             state[:, [1]]]), device=self.device)
+        actorInput = torch.tensor(np.hstack([ref[:, 0:self.h + 1] - state[:, [0]], 
+                                             state[:, [1]]]), device=self.device) - self.aInCenter
 
         if self.mode == 'train':
             with torch.no_grad():
@@ -158,8 +163,8 @@ class TMAPPO(Agent):
         self.c2.train()
         self.criticOptim.zero_grad()
 
-        cInput = torch.cat([deltas[:, 0:self.h + 1], d2[:, 0:self.h + 1]], axis=1)
-        cNextInput = torch.cat([deltas[:, 1:self.h + 2], d2[:, 1:self.h + 2]], axis=1)
+        cInput = torch.cat([deltas[:, 0:self.h + 1], d2[:, 0:self.h + 1]], axis=1) - self.cInCenter
+        cNextInput = torch.cat([deltas[:, 1:self.h + 2], d2[:, 1:self.h + 2]], axis=1) - self.cInCenter
 
         v1 = self.c1(cInput)
         v2 = self.c2(cInput)
@@ -177,7 +182,7 @@ class TMAPPO(Agent):
         self.actorOptim.zero_grad()
 
         actorInput = torch.cat([refs[:, 0:self.h + 1] - states[:, [0]],
-                                states[:, [1]]], axis=1)
+                                states[:, [1]]], axis=1) - self.aInCenter
         mus, sigmas = self.actor(actorInput)
         dist = Normal(mus, sigmas)
         c_log_probs = dist.log_prob(actions)

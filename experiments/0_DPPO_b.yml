@@ -17,9 +17,11 @@ agent:
   a_layers: [5, 400, 300, 1]
   a_activation: ['relu', 'relu', 'identity']
   a_layerOptions: [{}, {}, {'bias': 20.0}]
+  a_inCenter: [0.0, 0.0, 0.0, 0.0, 11.0]
   a_lr: 0.0003
   c_layers: [5, 400, 300, 1]
   c_activation: ['relu', 'relu', 'invRelu']
+  c_inCenter: [0.0, 0.0, 0.0, 0.0, 11.0]
   c_lr: 0.005
   tau: 0.001
   weightDecay: 0.000
