@@ -8,16 +8,20 @@ class ReferenceGenerator():
                  stepSize: float,
                  randomPoints: int,
                  variance: float = 0.1,
-                 offset: float = 0.0):
+                 offset: float = 0.0,
+                 seed: int = None):
         self.N = N
         self.stepSize = stepSize
         self.randomPoints = randomPoints
         self.variance = variance
         self.offset = offset
+        self.seed = seed
 
     def generate(self) -> np.ndarray:
         t = np.linspace(0, self.N * self.stepSize, self.N, dtype=float)
         t_sparse = np.linspace(0, self.N * self.stepSize, self.randomPoints, dtype=float)
+
+        np.random.seed(self.seed)
         ref_sparse = np.random.rand(self.randomPoints)
         interpolation = interp1d(t_sparse, ref_sparse, kind='cubic')
         ref = self.offset + interpolation(t) + self.variance * np.random.randn(t.size)

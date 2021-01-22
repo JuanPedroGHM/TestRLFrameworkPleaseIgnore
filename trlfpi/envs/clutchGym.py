@@ -27,7 +27,7 @@ class ClutchEnv(gym.Env):
     numrandref = 8
     noise_variance_ref = 0.0
 
-    def __init__(self, horizon: int = 1, deltaActionCost: float = 0.001, rewardScaling: float = 1.0):
+    def __init__(self, horizon: int = 1, deltaActionCost: float = 0.001, rewardScaling: float = 1.0, seed: int = None):
         super().__init__()
         self.h = horizon
         self.deltaActionCost = deltaActionCost
@@ -36,7 +36,8 @@ class ClutchEnv(gym.Env):
                                          ClutchEnv.timeStep,
                                          ClutchEnv.numrandref,
                                          variance=ClutchEnv.noise_variance_ref,
-                                         offset=ClutchEnv.referenceValue)
+                                         offset=ClutchEnv.referenceValue,
+                                         seed=seed)
 
         self.observation_space = Box(low=0.0, high=5000, shape=(2,))
         self.action_space = Box(low=-np.inf, high=np.inf, shape=(1,))

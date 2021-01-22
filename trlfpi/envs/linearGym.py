@@ -24,7 +24,7 @@ class LinearEnv(gym.Env):
     numrandref = 50
     noise_variance_ref = 0.0
 
-    def __init__(self, horizon: int = 1, deltaActionCost: float = 0.001, rewardScaling: float = 1.0):
+    def __init__(self, horizon: int = 1, deltaActionCost: float = 0.001, rewardScaling: float = 1.0, seed: int = None):
         super().__init__()
         self.alpha = deltaActionCost
         self.h = horizon
@@ -32,7 +32,8 @@ class LinearEnv(gym.Env):
         self.refGen = ReferenceGenerator(LinearEnv.N,
                                          LinearEnv.timeStep,
                                          LinearEnv.numrandref,
-                                         LinearEnv.noise_variance_ref)
+                                         LinearEnv.noise_variance_ref,
+                                         seed=seed)
 
         self.observation_space = Box(low=-np.inf, high=np.inf, shape=(2,))
         self.action_space = Box(low=-np.inf, high=np.inf, shape=(1,))
