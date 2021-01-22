@@ -12,7 +12,7 @@ trainer:
 agent:
   name: 'nc-ppo'
   h: 3
-  discount: 0.99
+  discount: 0.7
 
   a_layers: [6, 400, 300, 1]
   a_activation: ['relu', 'relu', 'identity']

@@ -50,7 +50,6 @@ class GPModel():
         # Filter new data
         pY = self.forward(X)
         mask = torch.pow(pY - Y, 2).sum(axis=1) > self.epsilon
-        print(f"Pre-filter: {X.shape}, Post-filter: {X[mask].shape}")
         for sample in zip(X[mask], Y[mask]):
             self.memory.add(sample)
 

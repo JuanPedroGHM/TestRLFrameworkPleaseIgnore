@@ -4,6 +4,7 @@ import torch
 from torch.distributions import Normal
 
 from .agent import Agent
+from ..gp.gpmodel import GPModel
 from ..envs import LinearEnv, ClutchEnv
 from ..memory import Memory
 from ..nn.stochasticActor import StochasticActor
@@ -28,7 +29,17 @@ class NCPPO(Agent):
         'a_lr': 1e-5,
 
         # Model and critic
-        'model': 'clutch',  # Can be linear, clutch or a GP checkpoint
+        'model': 'GP',  # Options: ['linear', 'clutch', 'GP']
+        'gp_config': {
+            'memorySize': 1000,
+            'epsilon': 1e-3,
+            'length': [1.0, 1.0, 1.0],
+            'theta': 1.0,
+            'inDim': 3,
+            'outDim': 2,
+            'sigma': 0.1
+        },
+        'checkpoint': None,
         'baseline': 'zero',      # Options: ['meanRewards', 'GAE']
 
         # Critic Network
@@ -73,8 +84,13 @@ class NCPPO(Agent):
             self.modelF = ClutchEnv().system
         elif self.config['model'] == 'linear':
             self.modelF = LinearEnv().system
+        elif self.config['model'] == 'GP':
+            self.modelF: GPModel = GPModel(self.config['gp_config'])
+            self.modelF.setup(device=self.device)
+            self.episodeMemory = Memory(1000)
+            self.lastSize = 0
         else:
-            raise Exception('Use of GP not implemented')
+            raise Exception('Option for model does not exist')
 
         if self.config['baseline'] == 'GAE':
             self.critic = VFunc(self.config['c_layers'], self.config['c_activation'], self.config['c_layerOptions']).to(device)
@@ -120,6 +136,28 @@ class NCPPO(Agent):
         # Save new values if any
         if stepData:
             self.replayBuff.add(tuple(map(lambda x: torch.tensor(x, device=self.device), stepData)))
+            # If GP, update
+            if self.config['model'] == 'GP':
+                gp_loss = 0
+                gp_size = 0
+                gpInput = torch.tensor(np.hstack([stepData[0],
+                                                  stepData[2]]),
+                                       device=self.device)
+                target = torch.tensor(stepData[-1], device=self.device)
+                self.episodeMemory.add((gpInput, target))
+
+                if stepData[-2] == 1:
+                    gpIns, gpTargets = self.episodeMemory.get()
+                    self.modelF.addData(gpIns, gpTargets)
+                    gp_size = self.modelF.memory.size
+                    if gp_size - self.lastSize > 50:
+                        self.modelF.fit()
+                        self.lastSize = gp_size
+                    self.episodeMemory.reset()
+
+                    pred = self.modelF(gpIns)
+                    gp_loss = torch.pow(gpTargets - pred, 2).sum().item()
+
         if self.replayBuff.size < self.config['batchSize']:
             return {'actor_loss': 0}
 
@@ -164,7 +202,10 @@ class NCPPO(Agent):
             G += - self.discount**i * torch.pow(refs[:, [i]] - pState[:, [0]], 2)
             pInput = torch.cat([pState, refs[:, i:self.h + i + 1]], axis=1) - self.inCenter
             pAction, _ = self.actor(pInput)
-            pState = self.modelF(pState, pAction, gpu=True)
+            if self.config['model'] == 'GP':
+                pState = self.modelF(torch.cat([pState, pAction], axis=1))
+            else:
+                pState = self.modelF(pState, pAction, gpu=True)
 
         adv = (G - baseline).detach()
 
@@ -182,8 +223,12 @@ class NCPPO(Agent):
         # if self.updates % self.config['update_freq'] == 0:
         #     for targetP, oP in zip(self.criticTarget.parameters(), self.critic.parameters()):
         #         targetP = (1 - self.tau) * targetP + self.tau * oP
+        report = {'actor_loss': actor_loss.item()}
+        if self.config['model'] == 'GP':
+            report['gp_loss'] = gp_loss
+            report['gp_size'] = gp_size
 
-        return {'actor_loss': actor_loss.item()}
+        return report
 
     def toDict(self) -> dict:
         cp: dict = {

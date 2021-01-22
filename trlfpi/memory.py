@@ -24,3 +24,6 @@ class Memory():
             return map(lambda x: torch.stack(x).reshape(batchSize, -1), zip(*batch))
         else:
             return map(lambda x: torch.stack(x).reshape(self.size, -1), zip(*self.data))
+
+    def reset(self):
+        self.data: List[Tuple] = []
