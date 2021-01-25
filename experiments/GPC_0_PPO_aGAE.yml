@@ -1,5 +1,5 @@
 report:
-  path: './results/NC_0_PPO_aGAE'
+  path: './results/GPC_0_PPO_aGAE'
 
 trainer:
   episodes: 2000 

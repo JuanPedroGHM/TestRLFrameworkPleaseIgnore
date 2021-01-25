@@ -21,7 +21,9 @@ class ReferenceGenerator():
         t = np.linspace(0, self.N * self.stepSize, self.N, dtype=float)
         t_sparse = np.linspace(0, self.N * self.stepSize, self.randomPoints, dtype=float)
 
-        np.random.seed(self.seed)
+        if self.seed:
+            np.random.seed(self.seed)
+
         ref_sparse = np.random.rand(self.randomPoints)
         interpolation = interp1d(t_sparse, ref_sparse, kind='cubic')
         ref = self.offset + interpolation(t) + self.variance * np.random.randn(t.size)

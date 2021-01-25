@@ -7,9 +7,11 @@ except ImportError:
     from yaml import Loader
 
 import gym
+import numpy as np
 from .agents import Agent
 from .report import Report
 from .trainer import Trainer
+
 
 
 @click.group()
@@ -63,8 +65,9 @@ def train(ctx, n: int):
 
 @trlfpi.command()
 @click.option('-n', type=int, default=10)
+@click.option('-s', type=int, default=None)
 @click.pass_context
-def test(ctx, n):
+def test(ctx, n, s):
     agent: Agent = ctx.obj['agent']
     env: gym.Env = ctx.obj['env']
     report: Report = ctx.obj['report']
@@ -72,6 +75,7 @@ def test(ctx, n):
     device = ctx.obj['device']
 
     for id in report.listExisting():
+        np.random.seed(s)
         report.id(id)
         print(f"Testing report {id}")
         agent.setup(checkpoint=report.unpickle('agent_best'), device=device)
