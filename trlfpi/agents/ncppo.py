@@ -22,6 +22,7 @@ class NCPPO(Agent):
         'discount': 0.7,
 
         # Policy Network
+        'inputMode': 'abs',  # ['diff']
         'a_layers': [4, 64, 64, 1],
         'a_activation': ['tahn', 'tahn', 'identity'],
         'a_layerOptions': None,
@@ -117,7 +118,8 @@ class NCPPO(Agent):
         self.inCenter = torch.tensor(self.config['a_inCenter'], device=self.device).reshape([1, -1])
 
     def act(self, state: np.ndarray, ref: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        actorInput = torch.tensor(np.hstack([state, ref[:, 0:self.h + 1]]), device=self.device) - self.inCenter
+        actorInput = self.inputPrep(torch.tensor(state, device=self.device),
+                                    torch.tensor(ref, device=self.device))
 
         if self.mode == 'train':
             with torch.no_grad():
@@ -168,8 +170,8 @@ class NCPPO(Agent):
         if self.config['baseline'] == 'GAE':
             self.critic.train()
             self.criticOptim.zero_grad()
-            cInput = torch.cat((states, refs[:, 0:self.h + 1]), axis=1) - self.inCenter
-            cNextInput = torch.cat([next_states, refs[:, 1:self.h + 2]], axis=1) - self.inCenter
+            cInput = self.inputPrep(states, refs)
+            cNextInput = self.inputPrep(next_states, refs[:, 1:])
 
             v = self.critic(cInput)
             next_v = (1 - dones) * self.criticTarget(cNextInput).detach()
@@ -189,7 +191,7 @@ class NCPPO(Agent):
         self.actorOptim.zero_grad()
 
         # Get current log_probs and entropy
-        actorInput = torch.cat([states, refs[:, 0:self.h + 1]], axis=1) - self.inCenter
+        actorInput = self.inputPrep(states, refs)
         mus, sigmas = self.actor(actorInput)
         dist = Normal(mus, sigmas)
         c_log_probs = dist.log_prob(actions)
@@ -200,7 +202,7 @@ class NCPPO(Agent):
         pState = next_states
         for i in range(1, self.h + 1):
             G += - self.discount**i * torch.pow(refs[:, [i]] - pState[:, [0]], 2)
-            pInput = torch.cat([pState, refs[:, i:self.h + i + 1]], axis=1) - self.inCenter
+            pInput = self.inputPrep(pState, refs[:, i:])
             pAction, _ = self.actor(pInput)
             if self.config['model'] == 'GP':
                 pState = self.modelF(torch.cat([pState, pAction], axis=1))
@@ -229,6 +231,17 @@ class NCPPO(Agent):
             report['gp_size'] = gp_size
 
         return report
+
+    def inputPrep(self, states: torch.Tensor, references: torch.Tensor) -> torch.Tensor:
+
+        if self.config['inputMode'] == 'abs':
+            return torch.cat([states, references[:, 0:self.h + 1]], axis=1) - self.inCenter
+
+        elif self.config['inputMode'] == 'diff':
+            return torch.cat([references[:, 0:self.h + 1] - states[:, [0]],
+                             states[:, [1]]], axis=1) - self.inCenter
+        else:
+            return 0
 
     def toDict(self) -> dict:
         cp: dict = {
