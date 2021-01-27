@@ -230,6 +230,9 @@ class NCPPO(Agent):
             report['gp_loss'] = gp_loss
             report['gp_size'] = gp_size
 
+        if self.config['baseline'] == 'GAE':
+            report['critic_loss'] = critic_loss.item()
+
         return report
 
     def inputPrep(self, states: torch.Tensor, references: torch.Tensor) -> torch.Tensor:
